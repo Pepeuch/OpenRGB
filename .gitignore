@@ -81,6 +81,12 @@ Makefile*
 # Qt unit tests
 target_wrapper.*
 
+# Private USB captures (keep local)
+*.pcap
+*.pcapng
+# Private D5 NEXT screen recordings
+/Controllers/AquaComputerD5NextController/*.mp4
+
 # QtCreator
 *.autosave
 
