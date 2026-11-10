@@ -3,7 +3,7 @@
 |                                                           |
 |   Offline D5 NEXT lighting report codec                   |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -55,15 +55,30 @@ enum D5NextResult
     D5NEXT_UNEXPECTED_CHANGE,
     D5NEXT_IO_ERROR,
     D5NEXT_NOT_READY,
+    D5NEXT_UNSUPPORTED_FIRMWARE,
+    D5NEXT_UNSUPPORTED_STRUCTURE,
+    D5NEXT_INVALID_GROUP,
+    D5NEXT_UNSUPPORTED_OPERATION,
+    D5NEXT_UNSUPPORTED_TRANSITION,
+    D5NEXT_PRECONDITION_FAILED,
 };
 
 struct D5NextLighting
 {
+    /* Historical tool facade: brightness is master, never the HSV V at 709.
+     * Use D5NextRGBpxConfiguration for the complete model. */
     unsigned int    hue;
     unsigned int    saturation;
     unsigned int    brightness;
     unsigned int    enabled;
     unsigned int    effect;
+};
+
+struct D5NextHSV
+{
+    unsigned short hue;
+    unsigned char saturation;
+    unsigned char value;
 };
 
 class D5NextProtocol
@@ -73,19 +88,8 @@ public:
     static D5NextResult ValidateReport(const unsigned char* report, std::size_t size);
     static D5NextResult Decode(const unsigned char* report, std::size_t size,
                               D5NextLayout layout, D5NextLighting& lighting);
-    static D5NextLighting RGBToHSV(unsigned char red, unsigned char green, unsigned char blue);
+    static D5NextHSV RGBToHSV(unsigned char red, unsigned char green, unsigned char blue);
     static bool IsKnownEffect(unsigned int effect);
-    static bool IsLightingOffset(std::size_t offset);
-    static D5NextResult ValidateLightingChange(const unsigned char* original, std::size_t original_size,
-                                             const unsigned char* modified, std::size_t modified_size,
-                                             D5NextLayout layout);
-    /*-----------------------------------------------------*\
-    | Output is untouched on failure. Input/output may     |
-    | overlap. All non-lighting bytes are preserved.        |
-    \*-----------------------------------------------------*/
-    static D5NextResult BuildLightingReport(const unsigned char* original, std::size_t original_size,
-                                           D5NextLayout layout, const D5NextLighting& lighting,
-                                           unsigned char* output, std::size_t output_size);
     static const char* ResultString(D5NextResult result);
 
 private:

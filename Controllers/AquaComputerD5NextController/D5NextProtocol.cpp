@@ -4,7 +4,7 @@
 |   Offline D5 NEXT lighting report codec                   |
 |   Protocol references: Documentation/AquaComputerD5Next.md |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -49,6 +49,10 @@ D5NextResult D5NextProtocol::ValidateReport(const unsigned char* report, std::si
     {
         return D5NEXT_INVALID_CRC;
     }
+    if(report[1] != 0 || report[2] != 3)
+    {
+        return D5NEXT_UNSUPPORTED_STRUCTURE;
+    }
     return D5NEXT_OK;
 }
 
@@ -86,7 +90,7 @@ D5NextResult D5NextProtocol::Decode(const unsigned char* report, std::size_t siz
     decoded.hue         = (report[D5NEXT_HUE_OFFSET] << 8) | report[D5NEXT_HUE_OFFSET + 1];
     decoded.saturation  = report[D5NEXT_SATURATION_OFFSET];
     decoded.brightness  = report[D5NEXT_BRIGHTNESS_OFFSET];
-    decoded.enabled     = report[D5NEXT_ENABLE_OFFSET];
+    decoded.enabled     = report[D5NEXT_ENABLE_OFFSET] & D5NEXT_LIGHTING_OFF;
     decoded.effect      = report[D5NEXT_EFFECT_OFFSET];
     if(!IsValidLighting(decoded))
     {
@@ -96,7 +100,7 @@ D5NextResult D5NextProtocol::Decode(const unsigned char* report, std::size_t siz
     return D5NEXT_OK;
 }
 
-D5NextLighting D5NextProtocol::RGBToHSV(unsigned char red, unsigned char green, unsigned char blue)
+D5NextHSV D5NextProtocol::RGBToHSV(unsigned char red, unsigned char green, unsigned char blue)
 {
     unsigned int maximum = red;
     unsigned int minimum = red;
@@ -118,7 +122,7 @@ D5NextLighting D5NextProtocol::RGBToHSV(unsigned char red, unsigned char green, 
     }
 
     unsigned int delta = maximum - minimum;
-    D5NextLighting lighting = { 0, 0, maximum, D5NEXT_LIGHTING_ON, D5NEXT_EFFECT_STATIC };
+    D5NextHSV lighting = { 0, 0, (unsigned char)maximum };
     if(delta != 0)
     {
         /*-------------------------------------------------*\
@@ -149,85 +153,6 @@ D5NextLighting D5NextProtocol::RGBToHSV(unsigned char red, unsigned char green, 
     return lighting;
 }
 
-bool D5NextProtocol::IsLightingOffset(std::size_t offset)
-{
-    return offset == D5NEXT_BRIGHTNESS_OFFSET || offset == D5NEXT_ENABLE_OFFSET
-        || offset == D5NEXT_EFFECT_OFFSET || offset == D5NEXT_HUE_OFFSET
-        || offset == D5NEXT_HUE_OFFSET + 1 || offset == D5NEXT_SATURATION_OFFSET;
-}
-
-D5NextResult D5NextProtocol::ValidateLightingChange(const unsigned char* original, std::size_t original_size,
-                                                   const unsigned char* modified, std::size_t modified_size,
-                                                   D5NextLayout layout)
-{
-    D5NextLighting lighting;
-    D5NextResult result = Decode(original, original_size, layout, lighting);
-    if(result != D5NEXT_OK)
-    {
-        return result;
-    }
-    result = Decode(modified, modified_size, layout, lighting);
-    if(result != D5NEXT_OK)
-    {
-        return result;
-    }
-    for(std::size_t offset = 0; offset < D5NEXT_REPORT_SIZE; offset++)
-    {
-        if(original[offset] != modified[offset] && !IsLightingOffset(offset)
-        && offset != D5NEXT_CRC_OFFSET && offset != D5NEXT_CRC_OFFSET + 1)
-        {
-            return D5NEXT_UNEXPECTED_CHANGE;
-        }
-    }
-    return D5NEXT_OK;
-}
-
-D5NextResult D5NextProtocol::BuildLightingReport(const unsigned char* original, std::size_t original_size,
-                                                 D5NextLayout layout, const D5NextLighting& lighting,
-                                                 unsigned char* output, std::size_t output_size)
-{
-    if(output == nullptr)
-    {
-        return D5NEXT_INVALID_ARGUMENT;
-    }
-    if(output_size != D5NEXT_REPORT_SIZE)
-    {
-        return D5NEXT_INVALID_SIZE;
-    }
-    D5NextLighting previous;
-    D5NextResult result = Decode(original, original_size, layout, previous);
-    if(result != D5NEXT_OK)
-    {
-        return result;
-    }
-    if(!IsValidLighting(lighting))
-    {
-        return D5NEXT_INVALID_LIGHTING;
-    }
-
-    unsigned char candidate[D5NEXT_REPORT_SIZE];
-    memcpy(candidate, original, sizeof(candidate));
-    candidate[D5NEXT_BRIGHTNESS_OFFSET]  = (unsigned char)lighting.brightness;
-    candidate[D5NEXT_ENABLE_OFFSET]      = (unsigned char)lighting.enabled;
-    candidate[D5NEXT_EFFECT_OFFSET]      = (unsigned char)lighting.effect;
-    candidate[D5NEXT_HUE_OFFSET]         = (unsigned char)(lighting.hue >> 8);
-    candidate[D5NEXT_HUE_OFFSET + 1]     = (unsigned char)lighting.hue;
-    candidate[D5NEXT_SATURATION_OFFSET] = (unsigned char)lighting.saturation;
-
-    unsigned short crc = CalculateCRC(candidate + 1, D5NEXT_CRC_OFFSET - 1);
-    candidate[D5NEXT_CRC_OFFSET]        = (unsigned char)(crc >> 8);
-    candidate[D5NEXT_CRC_OFFSET + 1]    = (unsigned char)crc;
-
-    result = ValidateLightingChange(original, original_size, candidate, sizeof(candidate), layout);
-    if(result != D5NEXT_OK)
-    {
-        return result;
-    }
-    bool unchanged = memcmp(original, candidate, sizeof(candidate)) == 0;
-    memcpy(output, candidate, sizeof(candidate));
-    return unchanged ? D5NEXT_UNCHANGED : D5NEXT_OK;
-}
-
 const char* D5NextProtocol::ResultString(D5NextResult result)
 {
     switch(result)
@@ -243,6 +168,12 @@ const char* D5NextProtocol::ResultString(D5NextResult result)
     case D5NEXT_UNEXPECTED_CHANGE:   return "non-lighting byte changed";
     case D5NEXT_IO_ERROR:            return "feature report transfer failed";
     case D5NEXT_NOT_READY:           return "device unavailable or previous transfer failed";
+    case D5NEXT_UNSUPPORTED_FIRMWARE: return "unknown firmware";
+    case D5NEXT_UNSUPPORTED_STRUCTURE:return "unknown configuration structure";
+    case D5NEXT_INVALID_GROUP:       return "invalid RGBpx group";
+    case D5NEXT_UNSUPPORTED_OPERATION:return "RGBpx operation not established by evidence";
+    case D5NEXT_UNSUPPORTED_TRANSITION:return "mode transition requires reviewed preconditions";
+    case D5NEXT_PRECONDITION_FAILED:  return "RGBpx patch precondition failed";
     default:                        return "unknown error";
     }
 }

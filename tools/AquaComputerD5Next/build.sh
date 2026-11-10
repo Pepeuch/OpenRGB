@@ -9,4 +9,6 @@ mkdir -p -- "$repo_dir/.build/d5next-readonly"
     -I"$repo_dir/Controllers/AquaComputerD5NextController" -I"$repo_dir/dependencies/CRCpp" \
     "$tool_dir/D5NextReadOnly.cpp" "$tool_dir/D5NextDiagnostic.cpp" \
     "$repo_dir/Controllers/AquaComputerD5NextController/D5NextProtocol.cpp" \
+    "$repo_dir/Controllers/AquaComputerD5NextController/D5NextRGBpx.cpp" \
+    "$repo_dir/Controllers/AquaComputerD5NextController/D5NextEffects.cpp" \
     -o "$repo_dir/.build/d5next-readonly/d5next-readonly"

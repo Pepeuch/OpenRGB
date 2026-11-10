@@ -4,7 +4,18 @@ TARGET = d5next-tests
 CONFIG += console c++17 warn_on
 CONFIG -= app_bundle qt
 QT -= core gui
-DEFINES += OPENRGB_D5NEXT_OFFLINE_TESTS
+contains(CONFIG, d5next_detection) {
+    TARGET = d5next-detection-tests
+    DEFINES += OPENRGB_D5NEXT_READ_ONLY_DETECTION
+    SOURCES += $$PWD/DetectionTests.cpp $$PWD/OfflineDetection.cpp
+    unix:LIBS += -Wl,--wrap=access
+} else:contains(CONFIG, d5next_production) {
+    TARGET = d5next-production-tests
+    SOURCES += $$PWD/ProductionTests.cpp
+} else {
+    DEFINES += OPENRGB_D5NEXT_OFFLINE_TESTS
+    SOURCES += $$PWD/D5NextTests.cpp $$PWD/OfflineDetection.cpp
+}
 
 OPENRGB_ROOT = $$clean_path($$PWD/../..)
 D5NEXT_DIR = $$OPENRGB_ROOT/Controllers/AquaComputerD5NextController
@@ -20,10 +31,12 @@ INCLUDEPATH += $$OPENRGB_ROOT \
                $$OPENRGB_ROOT/SPDAccessor \
                $$D5NEXT_DIR
 
-SOURCES += $$PWD/D5NextTests.cpp \
-           $$PWD/OfflineLog.cpp \
-           $$PWD/OfflineDetection.cpp \
+SOURCES += $$PWD/OfflineLog.cpp \
            $$D5NEXT_DIR/D5NextProtocol.cpp \
+           $$D5NEXT_DIR/D5NextRGBpx.cpp \
+           $$D5NEXT_DIR/D5NextEffects.cpp \
+           $$D5NEXT_DIR/D5NextSystemCommands.cpp \
+           $$D5NEXT_DIR/D5NextOwnership.cpp \
            $$D5NEXT_DIR/AquaComputerD5NextController.cpp \
            $$D5NEXT_DIR/AquaComputerD5NextControllerDetect.cpp \
            $$D5NEXT_DIR/RGBController_AquaComputerD5Next.cpp \

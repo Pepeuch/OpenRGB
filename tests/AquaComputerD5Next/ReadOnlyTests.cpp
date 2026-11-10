@@ -3,7 +3,7 @@
 |                                                           |
 |   Descriptor and read-only syscall boundary tests         |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -136,6 +136,8 @@ static void ResetMock()
     opens = closes = raw_queries = feature_queries = 0;
     memset(response, 0, sizeof(response));
     response[0] = 3;
+    response[1] = 0;
+    response[2] = 3;
     response[663] = 1;
     unsigned short crc = D5NextProtocol::CalculateCRC(response + 1, 806);
     response[807] = (unsigned char)(crc >> 8);

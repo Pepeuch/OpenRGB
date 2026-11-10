@@ -3,7 +3,7 @@
 |                                                           |
 |   Linux metadata and one-shot read-only HID diagnostic    |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "D5NextReadOnly.h"
+#include "D5NextRGBpx.h"
 
 static void PrintText(const char* label, const std::filesystem::path& path)
 {
@@ -165,11 +166,14 @@ static int RunDiagnostic(int argc, char** argv)
         }
         std::printf("report: id=0x%02X length=%d stored_crc=0x%02X%02X calculated_crc=0x%04X\n",
                     report[0], received, report[807], report[808], D5NextProtocol::CalculateCRC(report + 1, 806));
-        std::printf("candidate RGB fields (layout assumption only): brightness=%u flag=0x%02X effect=0x%02X hue=%u saturation=%u\n",
-                    report[237], report[239], report[663], (report[706] << 8) | report[707], report[708]);
-        D5NextLighting lighting;
-        D5NextResult decoded = D5NextProtocol::Decode(report, received, D5NEXT_LAYOUT_DOCUMENTED_809, lighting);
-        std::printf("strict codec field decode: %s (not firmware compatibility approval)\n", D5NextProtocol::ResultString(decoded));
+        D5NextRGBpxController group;
+        D5NextRGBpx::DecodeController(report + 660, 70, group);
+        const D5NextEffectInfo* effect = D5NextEffects::Find(group.mode);
+        std::printf("RGB fields (structure 3; firmware not established by this GET): master=%u strip_flags=0x%02X%02X\n",
+                    report[237], report[238], report[239]);
+        std::printf("group6: strip=%u start=%u count=%u mode=0x%02X (%s) flags=0x%04X H=%u S=%u V=%u\n",
+                    group.strip, group.led_start, group.count, group.mode, effect == nullptr ? "unknown" : effect->name,
+                    group.flags, group.colors[0].hue, group.colors[0].saturation, group.colors[0].value);
     }
     return outcome;
 }

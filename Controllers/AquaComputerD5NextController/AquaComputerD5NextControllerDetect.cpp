@@ -1,9 +1,9 @@
 /*---------------------------------------------------------*\
 | AquaComputerD5NextControllerDetect.cpp                    |
 |                                                           |
-|   Inactive D5 NEXT detector; no device access             |
+|   Opt-in D5 NEXT read-only detector                       |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -46,15 +46,23 @@ DetectedControllers DetectAquaComputerD5NextControllers(hid_device_info* info, c
         return detected_controllers;
     }
 #endif
-    hid_device* dev = hid_open_path(info->path);
-    if(dev == nullptr)
+    std::unique_ptr<D5NextOwnership> ownership = D5NextOwnership::Acquire(info->path, info->serial_number);
+    if(!ownership)
+    {
+        return detected_controllers;
+    }
+    D5NextHIDHandle dev(hid_open_path(info->path));
+    if(!dev)
     {
         LOG_DEBUG("[AquaComputer D5 NEXT] HID interface is unavailable");
         return detected_controllers;
     }
-    AquaComputerD5NextController* controller = new AquaComputerD5NextController(dev, info->path);
-    RGBController_AquaComputerD5Next* rgb_controller = new RGBController_AquaComputerD5Next(controller, true);
-    detected_controllers.push_back(rgb_controller);
+    std::unique_ptr<AquaComputerD5NextController> controller(
+        new AquaComputerD5NextController(std::move(ownership), std::move(dev)));
+    std::unique_ptr<RGBController_AquaComputerD5Next> rgb_controller(
+        new RGBController_AquaComputerD5Next(std::move(controller)));
+    detected_controllers.push_back(rgb_controller.get());
+    rgb_controller.release();
 #else
     (void)info;
 #endif

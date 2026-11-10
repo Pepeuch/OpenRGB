@@ -3,7 +3,7 @@
 |                                                           |
 |   Dedicated pink test, read-only simulation by default     |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -116,7 +116,12 @@ static int RunPinkTest(int argc, char** argv)
             return 2;
         }
     }
-    std::printf("mode: %s\n", write_once ? "SINGLE WRITE REQUESTED (requires all safety gates)" : "READ-ONLY SIMULATION");
+    if(write_once)
+    {
+        std::puts("BLOCKED: the historical pink mode transition is superseded; no device accessed.");
+        return 4;
+    }
+    std::puts("mode: READ-ONLY SIMULATION; historical pink transition is no longer approved for preparation");
     std::puts("No raw config/status dump, save, Output, reset, retry or automatic restore is implemented.");
     std::vector<D5NextDeviceInfo> devices = D5NextReadOnly::Discover();
     if(devices.size() != 1)

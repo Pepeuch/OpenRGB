@@ -3,7 +3,7 @@
 |                                                           |
 |   Synthetic pink plans and mocked one-shot transactions   |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -50,6 +50,8 @@ static void Fixture(unsigned char* report, unsigned int seed)
         report[offset] = (unsigned char)(offset * 31 + seed);
     }
     report[0] = 3;
+    report[1] = 0;
+    report[2] = 3;
     report[237] = 255;
     report[239] = 0;
     report[663] = 3;
@@ -61,7 +63,6 @@ static void Fixture(unsigned char* report, unsigned int seed)
 
 static void TestPlans()
 {
-    const unsigned int offsets[] = { 663, 706, 707, 708, 807, 808 };
     unsigned char original[809];
     unsigned char candidate[809];
     unsigned char snapshot[809];
@@ -69,54 +70,26 @@ static void TestPlans()
     {
         Fixture(original, seed);
         memcpy(snapshot, original, 809);
-        D5NextPinkAudit audit;
-        CHECK(D5NextPinkTest::BuildPlan(original, 809, candidate, 809, audit) == D5NEXT_OK);
+        memset(candidate, 0xA5, 809);
+        D5NextPinkAudit audit = {};
+        audit.changed_count = 99;
+        /* Lot 3's six-byte plan is superseded by the observed coupled
+         * transitions. Refuse it even for the synthetic firmware policy. */
+        CHECK(D5NextPinkTest::BuildPlan(original, 809, candidate, 809, audit) == D5NEXT_UNSUPPORTED_TRANSITION);
+        CHECK(audit.changed_count == 99);
         CHECK(memcmp(original, snapshot, 809) == 0);
-        CHECK(audit.changed_count == 6);
-        CHECK(audit.target.hue == 1408 && audit.target.saturation == 150 && audit.target.brightness == 255);
-        CHECK(candidate[663] == 1 && candidate[706] == 5 && candidate[707] == 128 && candidate[708] == 150);
-        CHECK((audit.initial_crc ^ audit.target_crc) == 0x17B1);
-        for(unsigned int index = 0; index < 6; index++)
-        {
-            CHECK(audit.offsets[index] == offsets[index]);
-            CHECK(audit.before[index] == original[offsets[index]] && audit.after[index] == candidate[offsets[index]]);
-        }
-        for(unsigned int offset = 0; offset < 809; offset++)
-        {
-            if(offset != 663 && offset != 706 && offset != 707 && offset != 708 && offset < 807)
-            {
-                CHECK(original[offset] == candidate[offset]);
-            }
-        }
-    }
-    CHECK((0xEFD1 ^ 0x17B1) == 0xF860); /* Conditional user-summary prediction, not a captured fixture. */
-
-    for(unsigned int offset = 0; offset < 809; offset++)
-    {
-        Fixture(original, 19);
-        D5NextPinkAudit audit;
-        CHECK(D5NextPinkTest::BuildPlan(original, 809, candidate, 809, audit) == D5NEXT_OK);
-        candidate[offset] ^= 1;
-        if(offset < 807)
-        {
-            FixCRC(candidate);
-        }
-        CHECK(D5NextPinkTest::AuditPlan(original, 809, candidate, 809, audit) != D5NEXT_OK);
-    }
-
-    const unsigned int unknown_fields[] = { 237, 239, 663, 706, 708 };
-    for(unsigned int index = 0; index < 5; index++)
-    {
-        Fixture(original, 19);
-        original[unknown_fields[index]] ^= 1;
-        FixCRC(original);
-        memset(candidate, 0xA5, sizeof(candidate));
-        D5NextPinkAudit audit;
-        CHECK(D5NextPinkTest::BuildPlan(original, 809, candidate, 809, audit) != D5NEXT_OK);
         for(unsigned int offset = 0; offset < 809; offset++)
         {
             CHECK(candidate[offset] == 0xA5);
         }
+        memcpy(candidate, original, 809);
+        candidate[663] = 1;
+        candidate[706] = 5;
+        candidate[707] = 128;
+        candidate[708] = 150;
+        FixCRC(candidate);
+        CHECK(D5NextPinkTest::AuditPlan(original, 809, candidate, 809, audit) == D5NEXT_UNSUPPORTED_TRANSITION);
+        CHECK(audit.changed_count == 99);
     }
     Fixture(original, 19);
     D5NextPinkAudit audit;
@@ -124,7 +97,7 @@ static void TestPlans()
     CHECK(D5NextPinkTest::BuildPlan(original, 809, candidate, 808, audit) == D5NEXT_INVALID_SIZE);
     CHECK(D5NextPinkTest::BuildPlan(nullptr, 809, candidate, 809, audit) == D5NEXT_INVALID_ARGUMENT);
     CHECK(D5NextPinkTest::BuildPlan(original, 809, nullptr, 809, audit) == D5NEXT_INVALID_ARGUMENT);
-    std::puts("PASS exact pink plan, all opaque bytes, stricter mask, changed baseline, and failure output");
+    std::puts("PASS historical pink transition refuses; candidate and audit untouched");
 }
 
 static unsigned int opens;
@@ -270,13 +243,9 @@ extern "C" int __wrap_ioctl(int fd, unsigned long request, ...)
         errno = get_result < 0 ? EPIPE : 0;
         return get_result;
     }
-    CHECK(request == HIDIOCSFEATURE(809));
-    CHECK(gets == 1 && sets == 0 && flushed);
-    D5NextPinkAudit audit;
-    CHECK(D5NextPinkTest::AuditPlan(configuration, 809, (unsigned char*)data, 809, audit) == D5NEXT_OK);
-    sets++;
-    errno = set_result < 0 ? EPIPE : 0;
-    return set_result;
+    (void)data;
+    CHECK(false); /* No SET, Output, reset or save may cross this boundary. */
+    return -1;
 }
 
 static void Reset()
@@ -329,17 +298,9 @@ static void TestTransactions()
         case 18: flush_failed = true; break;
         default: break;
         }
-        bool approved = D5NextPinkTest::FirmwareIsApproved(firmware);
         D5NextPinkTest transaction;
         int result = transaction.Run(device, descriptor, competing, write_once, recovery, inventory_complete);
-        bool should_set = scenario >= 14 && scenario <= 16 && approved;
-        CHECK(sets == (should_set ? 1U : 0U));
-        CHECK(result == (scenario == 0 || (scenario == 16 && approved) ? 0 : (should_set ? 5 : 4)));
-        /* Scenario 16 is the successful test-only synthetic firmware path. */
-        if(scenario == 16 && approved)
-        {
-            CHECK(result == 0 && sets == 1);
-        }
+        CHECK(sets == 0 && result == 4); /* Retired transition is independently blocked. */
         CHECK(opens == closes);
         CHECK(gets <= 1 && reads <= 1 && sets <= 1);
         unsigned int old_gets = gets;
@@ -361,14 +322,7 @@ static void TestTransactions()
     first.join();
     second.join();
     CHECK(opens == 1 && closes == 1 && gets == 1 && reads == 1);
-    if(D5NextPinkTest::FirmwareIsApproved(0xFA01))
-    {
-        CHECK(sets == 1 && ((first_result == 0 && second_result == 4) || (first_result == 4 && second_result == 0)));
-    }
-    else
-    {
-        CHECK(sets == 0 && first_result == 4 && second_result == 4);
-    }
+    CHECK(sets == 0 && first_result == 4 && second_result == 4);
     std::puts("PASS one locked handle, passive firmware, fresh GET, gates, and no retry after any result");
 }
 

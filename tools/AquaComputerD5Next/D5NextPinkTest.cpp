@@ -3,7 +3,7 @@
 |                                                           |
 |   Audited one-shot D5 NEXT pink test preparation           |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -31,17 +31,6 @@ static bool IsFirstTestBaseline(const D5NextLighting& lighting)
         && lighting.effect == D5NEXT_EFFECT_RAINBOW && lighting.hue == 0 && lighting.saturation == 255;
 }
 
-static bool IsPinkChangeOffset(unsigned int offset)
-{
-    /*-----------------------------------------------------*\
-    | For this exact initial state, even brightness/enable  |
-    | must remain unchanged. Narrower than the general mask.|
-    \*-----------------------------------------------------*/
-    return offset == D5NEXT_EFFECT_OFFSET || offset == D5NEXT_HUE_OFFSET
-        || offset == D5NEXT_HUE_OFFSET + 1 || offset == D5NEXT_SATURATION_OFFSET
-        || offset == D5NEXT_CRC_OFFSET || offset == D5NEXT_CRC_OFFSET + 1;
-}
-
 D5NextResult D5NextPinkTest::AuditPlan(const unsigned char* original, std::size_t size,
                                      const unsigned char* candidate, std::size_t candidate_size,
                                      D5NextPinkAudit& audit)
@@ -66,35 +55,9 @@ D5NextResult D5NextPinkTest::AuditPlan(const unsigned char* original, std::size_
     {
         return D5NEXT_INVALID_LIGHTING;
     }
-    result = D5NextProtocol::ValidateLightingChange(original, size, candidate, candidate_size,
-                                                   D5NEXT_LAYOUT_DOCUMENTED_809);
-    if(result != D5NEXT_OK)
-    {
-        return result;
-    }
-    checked.initial_crc = (unsigned short)((original[807] << 8) | original[808]);
-    checked.calculated_initial_crc = D5NextProtocol::CalculateCRC(original + 1, 806);
-    checked.target_crc = D5NextProtocol::CalculateCRC(candidate + 1, 806);
-    for(unsigned int offset = 0; offset < D5NEXT_REPORT_SIZE; offset++)
-    {
-        if(original[offset] != candidate[offset])
-        {
-            if(!IsPinkChangeOffset(offset) || checked.changed_count >= 8)
-            {
-                return D5NEXT_UNEXPECTED_CHANGE;
-            }
-            checked.offsets[checked.changed_count] = offset;
-            checked.before[checked.changed_count] = original[offset];
-            checked.after[checked.changed_count] = candidate[offset];
-            checked.changed_count++;
-        }
-    }
-    if(checked.changed_count != 6)
-    {
-        return D5NEXT_UNEXPECTED_CHANGE;
-    }
-    audit = checked;
-    return D5NEXT_OK;
+    /* The coupled Rainbow -> Static transition has no approved patch. */
+    (void)audit;
+    return D5NEXT_UNSUPPORTED_TRANSITION;
 }
 
 D5NextResult D5NextPinkTest::BuildPlan(const unsigned char* original, std::size_t size,
@@ -119,20 +82,11 @@ D5NextResult D5NextPinkTest::BuildPlan(const unsigned char* original, std::size_
     {
         return D5NEXT_INVALID_LIGHTING;
     }
-    D5NextLighting pink = D5NextProtocol::RGBToHSV(255, 105, 180);
-    unsigned char prepared[D5NEXT_REPORT_SIZE];
-    result = D5NextProtocol::BuildLightingReport(original, size, D5NEXT_LAYOUT_DOCUMENTED_809, pink,
-                                                prepared, sizeof(prepared));
-    if(result != D5NEXT_OK)
-    {
-        return result;
-    }
-    result = AuditPlan(original, size, prepared, sizeof(prepared), audit);
-    if(result == D5NEXT_OK)
-    {
-        memcpy(candidate, prepared, sizeof(prepared));
-    }
-    return result;
+    /* No historical constructor can produce a candidate without identity and
+     * group allocation evidence. Keep the caller's output and audit untouched. */
+    (void)candidate;
+    (void)audit;
+    return D5NEXT_UNSUPPORTED_TRANSITION;
 }
 
 bool D5NextPinkTest::FirmwareIsApproved(unsigned int firmware)
@@ -284,7 +238,7 @@ int D5NextPinkTest::Run(const D5NextDeviceInfo& device, const D5NextDescriptor& 
         return Finish(4);
     }
     unsigned char candidate[D5NEXT_REPORT_SIZE];
-    D5NextPinkAudit audit;
+    D5NextPinkAudit audit = {};
     validation = BuildPlan(original, sizeof(original), candidate, sizeof(candidate), audit);
     if(validation != D5NEXT_OK)
     {
@@ -317,30 +271,5 @@ int D5NextPinkTest::Run(const D5NextDeviceInfo& device, const D5NextDescriptor& 
         std::puts("SIMULATION COMPLETE: no SET/Output/save/reset/restore was sent");
         return Finish(0);
     }
-    if(!approved || !recovery_confirmed || !writable_now || !process_inventory_complete)
-    {
-        return Finish(4);
-    }
-    /*-----------------------------------------------------*\
-    | Re-audit immediately before the sole possible SET.    |
-    | Production has an empty approval policy, so cannot    |
-    | reach this branch. No retry, readback, save or restore.|
-    \*-----------------------------------------------------*/
-    if(AuditPlan(original, sizeof(original), candidate, sizeof(candidate), audit) != D5NEXT_OK)
-    {
-        return Finish(4);
-    }
-    if(fflush(stdout) != 0)
-    {
-        std::fprintf(stderr, "STOP: audit output could not be flushed; no SET sent\n");
-        return Finish(4);
-    }
-    int sent = ioctl(fd, HIDIOCSFEATURE(sizeof(candidate)), candidate);
-    if(sent != D5NEXT_REPORT_SIZE)
-    {
-        std::puts("STOP: SET completion uncertain; no retry or automatic recovery");
-        return Finish(5);
-    }
-    std::puts("single SET completed; inspect LEDs/pump manually; no save or further HID commands");
-    return Finish(0);
+    return Finish(4);
 }

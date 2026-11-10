@@ -3,7 +3,7 @@
 |                                                           |
 |   Synthetic reports and in-process HID mocks only         |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -78,12 +78,18 @@ static void MakeFixture(unsigned char* report, unsigned int seed = 19)
         report[index] = (unsigned char)(index * 73 + seed);
     }
     report[0]   = 0x03;
+    report[1]   = 0;
+    report[2]   = 3;
     report[237] = 87;
     report[239] = 0x00;
+    report[660] = 1;
+    report[661] = 0;
+    report[662] = 6;
     report[663] = 0x01;
     report[706] = 0x01;
     report[707] = 0xFF;
     report[708] = 155;
+    report[709] = 255;
     FixCRC(report);
 }
 
@@ -164,26 +170,15 @@ static void TestColors()
         { 255,   0,   1, 1535, 255, 255 },
         { 255, 254, 254,    0,   1, 255 },
     };
-    unsigned char original[809];
-    unsigned char modified[809];
-    MakeFixture(original);
     for(unsigned int index = 0; index < sizeof(cases) / sizeof(cases[0]); index++)
     {
-        D5NextLighting lighting = D5NextProtocol::RGBToHSV((unsigned char)cases[index][0],
+        D5NextHSV lighting = D5NextProtocol::RGBToHSV((unsigned char)cases[index][0],
                                                           (unsigned char)cases[index][1],
                                                           (unsigned char)cases[index][2]);
         CHECK(lighting.hue == cases[index][3]);
         CHECK(lighting.saturation == cases[index][4]);
-        CHECK(lighting.brightness == cases[index][5]);
-        CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                                  lighting, modified, 809) == D5NEXT_OK);
-        CHECK(modified[706] == (lighting.hue >> 8));
-        CHECK(modified[707] == (lighting.hue & 0xFF));
-        CHECK(modified[708] == lighting.saturation);
-        CHECK(modified[237] == lighting.brightness);
-        CHECK(modified[239] == 0x00);
-        CHECK(modified[663] == 0x01);
-        CheckPreservation(original, modified);
+        CHECK(lighting.value == cases[index][5]);
+
     }
 
     /* Floating-point sector oracle across a deterministic RGB grid. */
@@ -214,128 +209,12 @@ static void TestColors()
                 hue += 6;
             }
         }
-        D5NextLighting actual = D5NextProtocol::RGBToHSV(red, green, blue);
+        D5NextHSV actual = D5NextProtocol::RGBToHSV(red, green, blue);
         CHECK(actual.hue == (unsigned int)std::floor(hue * 256 + 0.5) % 1536);
         CHECK(actual.saturation == (maximum == 0 ? 0 : (unsigned int)std::floor(delta * 255 / maximum + 0.5)));
-        CHECK(actual.brightness == maximum);
+        CHECK(actual.value == maximum);
     }
     std::puts("PASS RGB to HSV, primaries, grayscale, rounding, and hue wrap");
-}
-
-static void TestMutationsAndRejections()
-{
-    unsigned char original[809];
-    unsigned char snapshot[809];
-    unsigned char modified[809];
-    MakeFixture(original);
-    memcpy(snapshot, original, 809);
-    D5NextLighting lighting;
-    CHECK(D5NextProtocol::Decode(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809, lighting) == D5NEXT_OK);
-    CHECK(lighting.hue == 511 && lighting.saturation == 155 && lighting.brightness == 87);
-    CHECK(lighting.enabled == 0 && lighting.effect == 1);
-    CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, modified, 809) == D5NEXT_UNCHANGED);
-    CHECK(memcmp(original, modified, 809) == 0);
-
-    lighting.brightness = 255;
-    CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, modified, 809) == D5NEXT_OK);
-    for(unsigned int offset = 0; offset < 807; offset++)
-    {
-        if(offset != 237)
-        {
-            CHECK(original[offset] == modified[offset]);
-        }
-    }
-
-    /* All brightness/saturation boundaries, including hue endpoint. */
-    const unsigned int limits[] = { 0, 1, 254, 255 };
-    for(unsigned int saturation = 0; saturation < 4; saturation++)
-    for(unsigned int brightness = 0; brightness < 4; brightness++)
-    {
-        lighting.hue        = 1535;
-        lighting.saturation = limits[saturation];
-        lighting.brightness = limits[brightness];
-        CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                                  lighting, modified, 809) == D5NEXT_OK);
-        CHECK(modified[706] == 5 && modified[707] == 255);
-        CHECK(modified[708] == limits[saturation] && modified[237] == limits[brightness]);
-        CheckPreservation(original, modified);
-    }
-    CHECK(memcmp(original, snapshot, 809) == 0);
-
-    /* Repeating a color, including in-place/overlapping output. */
-    lighting = D5NextProtocol::RGBToHSV(12, 143, 250);
-    CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, modified, 809) == D5NEXT_OK);
-    CHECK(D5NextProtocol::BuildLightingReport(modified, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, modified, 809) == D5NEXT_UNCHANGED);
-    unsigned char overlap[810];
-    memcpy(overlap, original, 809);
-    CHECK(D5NextProtocol::BuildLightingReport(overlap, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, overlap + 1, 809) == D5NEXT_OK);
-    CHECK(memcmp(overlap + 1, modified, 809) == 0);
-
-    /* Independent allowlist audit: even a freshly recomputed CRC cannot
-       authorize changes to any other config byte. */
-    for(unsigned int offset = 1; offset < 807; offset++)
-    {
-        memcpy(modified, original, 809);
-        if(!AllowedOffset(offset))
-        {
-            modified[offset] ^= 1;
-            FixCRC(modified);
-            CHECK(D5NextProtocol::ValidateLightingChange(original, 809, modified, 809,
-                                                         D5NEXT_LAYOUT_DOCUMENTED_809) == D5NEXT_UNEXPECTED_CHANGE);
-        }
-        CHECK(D5NextProtocol::IsLightingOffset(offset) == (AllowedOffset(offset) && offset < 807));
-    }
-
-    /* Invalid requests leave caller-owned output unchanged. */
-    for(unsigned int field = 0; field < 5; field++)
-    {
-        lighting = D5NextProtocol::RGBToHSV(255, 0, 0);
-        switch(field)
-        {
-        case 0: lighting.hue = 1536; break;
-        case 1: lighting.saturation = 256; break;
-        case 2: lighting.brightness = 256; break;
-        case 3: lighting.enabled = 1; break;
-        case 4: lighting.effect = 0xFF; break;
-        }
-        memset(modified, 0xA5, 809);
-        CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                                  lighting, modified, 809) == D5NEXT_INVALID_LIGHTING);
-        for(unsigned int offset = 0; offset < 809; offset++)
-        {
-            CHECK(modified[offset] == 0xA5);
-        }
-    }
-    lighting = D5NextProtocol::RGBToHSV(0, 0, 255);
-    CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_UNKNOWN,
-                                              lighting, modified, 809) == D5NEXT_UNSUPPORTED_LAYOUT);
-    CHECK(D5NextProtocol::Decode(original, 809, (D5NextLayout)99, lighting) == D5NEXT_UNSUPPORTED_LAYOUT);
-    CHECK(D5NextProtocol::BuildLightingReport(original, 808, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, modified, 809) == D5NEXT_INVALID_SIZE);
-    CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, modified, 808) == D5NEXT_INVALID_SIZE);
-    CHECK(D5NextProtocol::BuildLightingReport(nullptr, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, modified, 809) == D5NEXT_INVALID_ARGUMENT);
-    CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                              lighting, nullptr, 809) == D5NEXT_INVALID_ARGUMENT);
-
-    const unsigned int invalid_offsets[] = { 239, 663, 706 };
-    const unsigned char invalid_values[] = { 1, 0xFE, 6 };
-    for(unsigned int index = 0; index < 3; index++)
-    {
-        MakeFixture(original);
-        original[invalid_offsets[index]] = invalid_values[index];
-        FixCRC(original);
-        CHECK(D5NextProtocol::ValidateReport(original, 809) == D5NEXT_OK);
-        CHECK(D5NextProtocol::BuildLightingReport(original, 809, D5NEXT_LAYOUT_DOCUMENTED_809,
-                                                  lighting, modified, 809) == D5NEXT_INVALID_LIGHTING);
-    }
-    std::puts("PASS decoding, bounds, preservation, idempotence, and conservative rejections");
 }
 
 /*---------------------------------------------------------*\
@@ -414,18 +293,22 @@ static void TestMockedController()
     hid_device_ fake;
     MakeFixture(fake.report);
     {
-        AquaComputerD5NextController controller(&fake, "offline-mock");
+        AquaComputerD5NextController controller(D5NextOwnership::Acquire("offline-mock", L"test-serial"),
+                                                D5NextHIDHandle(&fake));
         CHECK(controller.SetLighting(1, 0xFF, 255) == D5NEXT_UNSUPPORTED_LAYOUT);
         CHECK(controller.SetOff() == D5NEXT_UNSUPPORTED_LAYOUT);
+        D5NextRGBpxPatch blocked = {};
+        blocked.kind = D5NEXT_PATCH_MASTER;
+        blocked.group = 6;
+        blocked.expected_mode = 1;
+        blocked.value = 255;
+        CHECK(controller.ApplyRGBpxPatch(blocked) == D5NEXT_UNSUPPORTED_LAYOUT);
         CHECK(fake.reads == 0 && fake.writes == 0);
     }
     CHECK(fake.closes == 1);
     {
-        AquaComputerD5NextController controller(nullptr, nullptr, D5NEXT_LAYOUT_DOCUMENTED_809);
-        CHECK(controller.SetOff() == D5NEXT_NOT_READY);
-    }
-    {
-        AquaComputerD5NextController controller(&fake, "offline-mock", D5NEXT_LAYOUT_DOCUMENTED_809);
+        AquaComputerD5NextController controller(D5NextOwnership::Acquire("offline-mock", L"test-serial"),
+                                                D5NextHIDHandle(&fake), D5NEXT_LAYOUT_DOCUMENTED_809);
         CHECK(fake.reads == 0 && fake.writes == 0);
         unsigned char original[809];
         memcpy(original, fake.report, 809);
@@ -441,9 +324,11 @@ static void TestMockedController()
         /* Concurrent external config change is preserved by a fresh read. */
         fake.report[500] ^= 0x80;
         FixCRC(fake.report);
-        CHECK(controller.SetLighting(2, 0x00FF0000, 255) == D5NEXT_OK);
+        CHECK(controller.SetLighting(2, 0x00FF0000, 255) == D5NEXT_UNSUPPORTED_TRANSITION);
+        fake.in_transaction = false;
+        CHECK(controller.SetLighting(1, 0x00FF0000, 255) == D5NEXT_OK);
         CHECK(fake.report[500] == (unsigned char)(original[500] ^ 0x80));
-        CHECK(fake.report[663] == 2 && fake.report[706] == 4 && fake.report[707] == 0);
+        CHECK(fake.report[663] == 1 && fake.report[706] == 4 && fake.report[707] == 0);
         unsigned char before_off[809];
         memcpy(before_off, fake.report, 809);
         CHECK(controller.SetOff() == D5NEXT_OK);
@@ -455,6 +340,11 @@ static void TestMockedController()
                 CHECK(fake.report[offset] == before_off[offset]);
             }
         }
+        CHECK(controller.SetLighting(3, 0, 0) == D5NEXT_UNSUPPORTED_TRANSITION);
+        fake.in_transaction = false;
+        /* An independent synthetic state, not a driver-generated preset. */
+        fake.report[663] = 3;
+        FixCRC(fake.report);
         CHECK(controller.SetLighting(3, 0, 0) == D5NEXT_OK);
         CHECK(fake.report[237] == 0 && fake.report[239] == 0 && fake.report[663] == 3);
         CHECK(fake.report[706] == 4 && fake.report[707] == 0 && fake.report[708] == 255);
@@ -468,7 +358,8 @@ static void TestMockedController()
     {
         hid_device_ broken;
         MakeFixture(broken.report);
-        AquaComputerD5NextController controller(&broken, "offline-mock", D5NEXT_LAYOUT_DOCUMENTED_809);
+        AquaComputerD5NextController controller(D5NextOwnership::Acquire("offline-mock", L"test-serial"),
+                                                D5NextHIDHandle(&broken), D5NEXT_LAYOUT_DOCUMENTED_809);
         switch(scenario)
         {
         case 0: broken.read_result = -1; break;
@@ -495,7 +386,7 @@ static void TestMockedController()
         }
         if(scenario == 6)
         {
-            expected = D5NEXT_INVALID_LIGHTING;
+            expected = D5NEXT_UNSUPPORTED_TRANSITION;
         }
         CHECK(controller.SetLighting(1, 0xFF, 255) == expected);
         CHECK(broken.writes == (scenario == 2 || scenario == 3 || scenario == 8 ? 1U : 0U));
@@ -510,13 +401,14 @@ static void TestMockedController()
     hid_device_ concurrent;
     MakeFixture(concurrent.report);
     {
-        AquaComputerD5NextController controller(&concurrent, "offline-mock", D5NEXT_LAYOUT_DOCUMENTED_809);
+        AquaComputerD5NextController controller(D5NextOwnership::Acquire("offline-mock", L"test-serial"),
+                                                D5NextHIDHandle(&concurrent), D5NEXT_LAYOUT_DOCUMENTED_809);
         std::atomic<unsigned int> errors{ 0 };
         std::thread first([&]()
         {
             for(unsigned int value = 1; value <= 100; value++)
             {
-                if(controller.SetLighting(1, value, 255) != D5NEXT_OK)
+                if(controller.SetLighting(1, ToRGBColor(255, value, 0), 255) != D5NEXT_OK)
                 {
                     errors++;
                 }
@@ -526,7 +418,7 @@ static void TestMockedController()
         {
             for(unsigned int value = 1; value <= 100; value++)
             {
-                if(controller.SetLighting(1, value << 16, 255) != D5NEXT_OK)
+                if(controller.SetLighting(1, ToRGBColor(0, value, 255), 255) != D5NEXT_OK)
                 {
                     errors++;
                 }
@@ -543,120 +435,151 @@ static void TestMockedController()
     std::puts("PASS mocked transactions, no persistence, fresh reads, errors, and serialization");
 }
 
-DetectedControllers DetectAquaComputerD5NextControllers(hid_device_info*, const std::string&);
-
-class InspectableD5Next : public RGBController_AquaComputerD5Next
+static void TestMockedRGBpxPatch()
 {
-public:
-    using RGBController_AquaComputerD5Next::RGBController_AquaComputerD5Next;
-
-    mode GetTestMode(unsigned int index)
+    hid_device_ fake;
+    MakeFixture(fake.report);
+    fake.report[663] = 0x13;
+    FixCRC(fake.report);
+    unsigned char original[809];
+    memcpy(original, fake.report, 809);
     {
-        return modes[index];
+        AquaComputerD5NextController controller(D5NextOwnership::Acquire("offline-mock", L"test-serial"),
+                                                D5NextHIDHandle(&fake), D5NEXT_LAYOUT_DOCUMENTED_809);
+        D5NextRGBpxPatch patch = {};
+        patch.group = 6;
+        patch.expected_mode = 0x13;
+        patch.kind = D5NEXT_PATCH_PARAMETER;
+        patch.value = 44;
+        CHECK(controller.ApplyRGBpxPatch(patch) == D5NEXT_OK);
+        CHECK(fake.reads == 1 && fake.writes == 1 && fake.report[682] == 0 && fake.report[683] == 44);
+        for(unsigned int offset = 0; offset < 807; offset++)
+        {
+            CHECK(offset == 682 || offset == 683 || fake.report[offset] == original[offset]);
+        }
+        CHECK(controller.ApplyRGBpxPatch(patch) == D5NEXT_UNCHANGED);
+        CHECK(fake.reads == 2 && fake.writes == 1);
+        fake.in_transaction = false;
+        patch.group = 0;
+        CHECK(controller.ApplyRGBpxPatch(patch) == D5NEXT_UNSUPPORTED_OPERATION);
+        CHECK(fake.writes == 1);
+        fake.in_transaction = false;
+        patch.group = 6;
+        fake.report[2] = 4;
+        FixCRC(fake.report);
+        CHECK(controller.ApplyRGBpxPatch(patch) == D5NEXT_UNSUPPORTED_STRUCTURE);
+        CHECK(fake.writes == 1);
     }
-
-    /* Set state without queuing work: exercise synchronous public RGB
-       callbacks without depending on the base worker's startup timing. */
-    void SelectTestMode(int index)
+    CHECK(fake.closes == 1);
+    MakeFixture(fake.report);
+    fake.in_transaction = false;
     {
-        std::lock_guard<std::shared_mutex> lock(AccessMutex);
-        active_mode = index;
+        AquaComputerD5NextController controller(D5NextOwnership::Acquire("offline-mock", L"test-serial"),
+                                                D5NextHIDHandle(&fake), D5NEXT_LAYOUT_DOCUMENTED_809);
+        unsigned int writes = fake.writes;
+        CHECK(controller.SetLighting(1, ToRGBColor(128, 0, 0), 255) == D5NEXT_UNSUPPORTED_OPERATION);
+        CHECK(fake.writes == writes && fake.report[237] == 87 && fake.report[709] == 255);
     }
-};
-
-static void CountCallback(void* argument, unsigned int reason, void* /*controller*/)
-{
-    unsigned int* counts = (unsigned int*)argument;
-    if(reason <= RGBCONTROLLER_UPDATE_REASON_SAVEMODE)
-    {
-        counts[reason]++;
-    }
+    std::puts("PASS RGBpx mock transaction, structure, external-group refusal, and master/V separation");
 }
 
-static void TestRGBControllerAPI()
+static void TestOwnership()
 {
-    CHECK(DetectAquaComputerD5NextControllers(nullptr, "offline").empty());
+    auto first = D5NextOwnership::Acquire("/offline/first", L"pump-serial");
+    CHECK(first != nullptr);
+    CHECK(D5NextOwnership::Acquire("/offline/first", L"another-serial") == nullptr);
+    CHECK(D5NextOwnership::Acquire("/offline/alias", L"pump-serial") == nullptr);
+    auto different = D5NextOwnership::Acquire("/offline/second", L"other-pump");
+    CHECK(different != nullptr);
+    CHECK(D5NextOwnership::Acquire(nullptr, L"pump-serial") == nullptr);
+    different.reset();
+    CHECK(D5NextOwnership::Acquire("/offline/second", L"other-pump") != nullptr);
+    first.reset();
+    CHECK(D5NextOwnership::Acquire("/offline/alias", L"pump-serial") != nullptr);
+
     hid_device_ fake;
     MakeFixture(fake.report);
     {
-        InspectableD5Next rgb(new AquaComputerD5NextController(&fake, "offline-mock",
-                                                              D5NEXT_LAYOUT_DOCUMENTED_809));
+        AquaComputerD5NextController controller(D5NextOwnership::Acquire("/offline/no-serial", nullptr),
+                                                D5NextHIDHandle(&fake), D5NEXT_LAYOUT_DOCUMENTED_809);
+        D5NextRGBpxPatch patch = {};
+        patch.kind = D5NEXT_PATCH_MASTER;
+        patch.group = 6;
+        patch.expected_mode = 1;
+        patch.value = 150;
+        CHECK(controller.ApplyRGBpxPatch(patch) == D5NEXT_UNSUPPORTED_LAYOUT);
         CHECK(fake.reads == 0 && fake.writes == 0);
-        CHECK(rgb.GetDeviceType() == DEVICE_TYPE_COOLER);
-        CHECK(rgb.GetZoneCount() == 1 && rgb.GetLEDCount() == 1);
-        zone global = rgb.GetZone(0);
-        CHECK(global.type == ZONE_TYPE_SINGLE);
-        CHECK(global.leds_min == 1 && global.leds_max == 1 && global.leds_count == 1);
-        CHECK(global.matrix_map.map.empty() && global.flags == 0);
-        CHECK(rgb.GetModeCount() == 4);
-        CHECK(!rgb.SupportsPerZoneModes());
-        for(unsigned int index = 0; index < 4; index++)
-        {
-            mode current = rgb.GetTestMode(index);
-            CHECK((current.flags & (MODE_FLAG_HAS_PER_LED_COLOR | MODE_FLAG_MANUAL_SAVE | MODE_FLAG_AUTOMATIC_SAVE
-                                  | MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_DIRECTION_LR)) == 0);
-            CHECK(current.name != "Direct" && current.name != "Custom");
-            if(index == 1 || index == 2)
-            {
-                CHECK(current.color_mode == MODE_COLORS_MODE_SPECIFIC);
-                CHECK(current.colors_min == 1 && current.colors_max == 1 && current.colors.size() == 1);
-            }
-            else
-            {
-                CHECK(current.color_mode == MODE_COLORS_NONE);
-            }
-        }
-        unsigned int callback_counts[3] = { 0, 0, 0 };
-        rgb.RegisterUpdateCallback(CountCallback, callback_counts);
-        rgb.SetModeColor(1, 0, ToRGBColor(0, 255, 0));
-        rgb.SetModeBrightness(1, 64);
-        rgb.SelectTestMode(1);
-        rgb.UpdateZoneLEDs(0);
-        CHECK(fake.report[237] == 64 && fake.report[706] == 2 && fake.report[707] == 0);
-        CHECK(fake.report[663] == 1);
-        fake.in_transaction = false;
-        unsigned int writes = fake.writes;
-        rgb.DeviceUpdateSingleLED(9);
-        rgb.DeviceUpdateZoneLEDs(9);
-        CHECK(fake.writes == writes);
-        rgb.SaveMode();
-        CHECK(fake.writes == writes);
-        rgb.SelectTestMode(0);
-        rgb.UpdateSingleLED(0);
-        CHECK(fake.report[239] == 2);
-        CHECK(callback_counts[RGBCONTROLLER_UPDATE_REASON_UPDATELEDS] == 2);
-        CHECK(callback_counts[RGBCONTROLLER_UPDATE_REASON_SAVEMODE] == 1);
-        rgb.UnregisterUpdateCallback(callback_counts);
     }
     CHECK(fake.closes == 1);
-    CHECK(mock_failures == 0);
-    std::puts("PASS native RGBController modes, zone model, and callbacks");
+    hid_device_ left, right;
+    MakeFixture(left.report);
+    MakeFixture(right.report);
+    {
+        AquaComputerD5NextController a(D5NextOwnership::Acquire("/offline/pump-a", L"pump-a"),
+                                       D5NextHIDHandle(&left), D5NEXT_LAYOUT_DOCUMENTED_809);
+        AquaComputerD5NextController b(D5NextOwnership::Acquire("/offline/pump-b", L"pump-b"),
+                                       D5NextHIDHandle(&right), D5NEXT_LAYOUT_DOCUMENTED_809);
+        D5NextRGBpxPatch patch_a = {}, patch_b = {};
+        patch_a.kind = patch_b.kind = D5NEXT_PATCH_MASTER;
+        patch_a.group = patch_b.group = 6;
+        patch_a.expected_mode = patch_b.expected_mode = 1;
+        patch_a.value = 150;
+        patch_b.value = 200;
+        D5NextResult result_a = D5NEXT_NOT_READY, result_b = D5NEXT_NOT_READY;
+        std::thread one([&]() { result_a = a.ApplyRGBpxPatch(patch_a); });
+        std::thread two([&]() { result_b = b.ApplyRGBpxPatch(patch_b); });
+        one.join();
+        two.join();
+        CHECK(result_a == D5NEXT_OK && result_b == D5NEXT_OK);
+        CHECK(left.report[237] == 150 && right.report[237] == 200);
+        CHECK(left.reads == 1 && left.writes == 1 && right.reads == 1 && right.writes == 1);
+        CHECK(!left.overlap && !right.overlap);
+    }
+    CHECK(left.closes == 1 && right.closes == 1);
+    std::puts("PASS in-process path/serial reservations and missing-serial write gate");
 }
+
+DetectedControllers DetectAquaComputerD5NextControllers(hid_device_info*, const std::string&);
 
 static void TestReadOnlyAdapter()
 {
     hid_device_ fake;
     MakeFixture(fake.report);
+    fake.report[663] = D5NEXT_EFFECT_RAINBOW;
+    FixCRC(fake.report);
     {
-        /* A known test layout deliberately removes the controller's
-           independent layout barrier: the adapter must still send nothing. */
-        InspectableD5Next rgb(new AquaComputerD5NextController(&fake, "offline-mock",
-                                                              D5NEXT_LAYOUT_DOCUMENTED_809), true);
+        std::unique_ptr<D5NextOwnership> owner = D5NextOwnership::Acquire("offline-adapter", L"adapter-serial");
+        auto native = std::unique_ptr<AquaComputerD5NextController>(
+            new AquaComputerD5NextController(std::move(owner), D5NextHIDHandle(&fake),
+                                             D5NEXT_LAYOUT_DOCUMENTED_809));
+        D5NextRGBpxPatch change = {};
+        change.group = 6;
+        change.expected_mode = D5NEXT_EFFECT_RAINBOW;
+        change.kind = D5NEXT_PATCH_MODE;
+        change.value = D5NEXT_EFFECT_STATIC;
+        CHECK(native->ApplyRGBpxPatch(change) == D5NEXT_UNSUPPORTED_TRANSITION);
+        CHECK(fake.reads == 1 && fake.writes == 0);
+        fake.in_transaction = false;
+        RGBController_AquaComputerD5Next rgb(std::move(native));
+        CHECK(rgb.GetDeviceType() == DEVICE_TYPE_COOLER);
+        CHECK(rgb.GetZoneCount() == 1 && rgb.GetLEDCount() == 6);
         CHECK(rgb.GetModeCount() == 1 && rgb.GetModeName(0) == "Read only");
         CHECK(rgb.GetModeFlags(0) == 0 && rgb.GetModeColorsCount(0) == 0);
+        CHECK(rgb.GetActiveMode() == 0);
+        rgb.SetActiveMode(1); /* Static must not exist in the published modes. */
+        CHECK(rgb.GetActiveMode() == 0);
         rgb.DeviceUpdateLEDs();
         rgb.DeviceUpdateSingleLED(0);
         rgb.DeviceUpdateZoneLEDs(0);
         rgb.DeviceUpdateMode();
         rgb.SetAllColors(0x00FFFFFF);
-        rgb.SetActiveMode(0);
         rgb.UpdateLEDs();
         rgb.SaveMode();
-        CHECK(fake.reads == 0 && fake.writes == 0);
+        rgb.SetDeviceSpecificConfiguration({ { "write_enabled", true } });
+        CHECK(fake.reads == 1 && fake.writes == 0);
     }
-    CHECK(fake.closes == 1);
-    CHECK(fake.reads == 0 && fake.writes == 0);
-    std::puts("PASS read-only adapter rejects all updates even with a known test layout");
+    CHECK(fake.closes == 1 && fake.writes == 0);
+    std::puts("PASS Rainbow->Static refusal does not publish Static or send SET");
 }
 
 /*---------------------------------------------------------*\
@@ -694,6 +617,7 @@ static void TestDetection()
     info.product_id = 0xF00E;
     info.interface_number = 1;
     info.release_number = 0xFFFF;
+    info.serial_number = const_cast<wchar_t*>(L"offline-pump-serial");
 
     DetectedControllers devices;
     SimulatedScan(detector, nullptr, devices);
@@ -706,6 +630,8 @@ static void TestDetection()
         CHECK(devices[0]->GetLocation() == "HID: /offline/d5-next");
         CHECK(devices[0]->GetModeCount() == 1);
         CHECK(devices[0]->GetModeName(0) == "Read only");
+        DetectedControllers duplicate = detector.function(&info, detector.name);
+        CHECK(duplicate.empty() && mock_opens == scan + 1);
         CHECK(devices[0]->GetModeFlags(0) == 0);
         CHECK(devices[0]->GetModeColorMode(0) == MODE_COLORS_NONE);
         CHECK(fake.closes == scan && mock_opens == scan + 1);
@@ -769,9 +695,9 @@ int main()
 {
     TestCRCAndFraming();
     TestColors();
-    TestMutationsAndRejections();
     TestMockedController();
-    TestRGBControllerAPI();
+    TestMockedRGBpxPatch();
+    TestOwnership();
     TestReadOnlyAdapter();
     TestDetection();
     std::printf("PASS all D5 NEXT offline tests (%u checks); no hardware backend linked\n", checks);

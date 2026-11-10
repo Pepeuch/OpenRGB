@@ -1,9 +1,9 @@
 /*---------------------------------------------------------*\
 | AquaComputerD5NextController.h                            |
 |                                                           |
-|   Staged D5 NEXT lighting controller (not detected)        |
+|   Staged D5 NEXT lighting controller                       |
 |                                                           |
-|   OpenRGB contributors                        10 Nov 2026 |
+|   Yannick Peuchot ( Pepeuch )                        10 Nov 2026 |
 |                                                           |
 |   This file is part of the OpenRGB project                |
 |   SPDX-License-Identifier: GPL-2.0-or-later               |
@@ -11,35 +11,40 @@
 
 #pragma once
 
-#include <mutex>
 #include <string>
-#include <hidapi.h>
-#include "D5NextProtocol.h"
+#include "D5NextOwnership.h"
+#include "D5NextRGBpx.h"
 
 class AquaComputerD5NextController
 {
 public:
     /*-----------------------------------------------------*\
-    | Takes ownership of an already-open handle. Constructor |
+    | Takes ownership of a reserved path and open handle.    |
     | sends nothing. Production has no approved firmware    |
     | profile and refuses all feature-report access.        |
     \*-----------------------------------------------------*/
-    AquaComputerD5NextController(hid_device* dev_handle, const char* path);
+    AquaComputerD5NextController(std::unique_ptr<D5NextOwnership> ownership, D5NextHIDHandle dev_handle);
 #ifdef OPENRGB_D5NEXT_OFFLINE_TESTS
-    AquaComputerD5NextController(hid_device* dev_handle, const char* path, D5NextLayout test_layout);
+    AquaComputerD5NextController(std::unique_ptr<D5NextOwnership> ownership, D5NextHIDHandle dev_handle,
+                                 D5NextLayout test_layout);
 #endif
     ~AquaComputerD5NextController();
 
     std::string GetLocation();
     D5NextResult SetLighting(unsigned int effect, unsigned int color, unsigned int brightness);
     D5NextResult SetOff();
+    D5NextResult ApplyRGBpxPatch(const D5NextRGBpxPatch& patch);
 
 private:
-    hid_device*     dev;
+    std::unique_ptr<D5NextOwnership> ownership;
+    D5NextHIDHandle dev;
     std::string     location;
     D5NextLayout    layout;
+    unsigned int    firmware;
+    bool            write_authorized;
     bool            transfer_failed;
-    std::mutex      transaction_mutex;
 
     D5NextResult UpdateLighting(bool off, unsigned int effect, unsigned int color, unsigned int brightness);
+    D5NextResult ReadFresh(unsigned char* report);
+    D5NextResult SendChanged(const unsigned char* original, const unsigned char* candidate);
 };
