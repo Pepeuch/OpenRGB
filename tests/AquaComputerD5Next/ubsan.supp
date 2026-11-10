@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Existing matrix_map_type::Set(0, 0, NULL) passes an empty vector's null
+# data() to memset with a zero length (RGBControllerInterface.h:287).
+# Only the explicit --sanitize-known-baseline run uses this suppression.
+nonnull-attribute:*RGBControllerInterface.h
