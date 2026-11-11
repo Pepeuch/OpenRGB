@@ -12,7 +12,7 @@
 #include "RGBController_AquaComputerD5Next.h"
 
 /*---------------------------------------------------------*\
-| No supported-device metadata until hardware validation.   |
+| Configuration snapshot only; no writable GUI capability.  |
 | The optional read-only detector is disabled by default.   |
 \*---------------------------------------------------------*/
 RGBController_AquaComputerD5Next::RGBController_AquaComputerD5Next(
@@ -21,9 +21,10 @@ RGBController_AquaComputerD5Next::RGBController_AquaComputerD5Next(
 {
     name        = "Aqua Computer D5 NEXT";
     vendor      = "Aqua Computer";
-    description = "D5 NEXT read-only discovery; configuration writes disabled";
+    description = "Experimental RGBpx configuration snapshot; read only";
     type        = DEVICE_TYPE_COOLER;
     location    = controller->GetLocation();
+    version     = controller->GetFirmware() == D5NEXT_FIRMWARE ? "1027" : "Unknown";
 
     mode observed;
     observed.name       = "Read only";
@@ -39,20 +40,33 @@ RGBController_AquaComputerD5Next::~RGBController_AquaComputerD5Next()
 
 void RGBController_AquaComputerD5Next::SetupZones()
 {
-    zone global_zone;
-    global_zone.name       = "Pump LEDs";
-    global_zone.type       = ZONE_TYPE_LINEAR;
-    global_zone.leds_min   = 6;
-    global_zone.leds_max   = 6;
-    global_zone.leds_count = 6;
-    zones.push_back(global_zone);
-
-    for(unsigned int index = 0; index < 6; index++)
+    description = "Experimental RGBpx configuration snapshot; read only";
+    zones.clear();
+    leds.clear();
+    D5NextRGBpxConfiguration snapshot;
+    if(!controller->GetConfiguration(snapshot)) return;
+    const unsigned int groups[] = { 6, 0 };
+    const char* names[] = { "Pump RGB", "External RGBpx" };
+    for(unsigned int index = 0; index < 2; index++)
     {
-        led pump_led;
-        pump_led.name = "Pump LED " + std::to_string(index + 1);
-        leds.push_back(pump_led);
+        const auto& group = snapshot.groups[groups[index]];
+        if(index == 1 && (group.count == 0 || group.mode == 0)) continue;
+        zone observed;
+        observed.name       = names[index];
+        observed.type       = ZONE_TYPE_LINEAR;
+        observed.leds_min   = group.count;
+        observed.leds_max   = group.count;
+        observed.leds_count = group.count;
+        zones.push_back(observed);
+        for(unsigned int position = 0; position < group.count; position++)
+        {
+            led item;
+            item.name = std::string(names[index]) + " LED " + std::to_string(position + 1);
+            leds.push_back(item);
+        }
     }
+    if(snapshot.groups[7].mode != 0)
+        description += "; g7 overlaps Pump RGB, rendering priority unknown";
     SetupColors();
 }
 
@@ -63,7 +77,7 @@ void RGBController_AquaComputerD5Next::DeviceUpdateLEDs()
 
 void RGBController_AquaComputerD5Next::DeviceUpdateZoneLEDs(int zone)
 {
-    if(zone == 0)
+    if(zone >= 0 && (unsigned int)zone < zones.size())
     {
         DeviceUpdateMode();
     }
@@ -71,7 +85,7 @@ void RGBController_AquaComputerD5Next::DeviceUpdateZoneLEDs(int zone)
 
 void RGBController_AquaComputerD5Next::DeviceUpdateSingleLED(int led)
 {
-    if(led >= 0 && led < 6)
+    if(led >= 0 && (unsigned int)led < leds.size())
     {
         DeviceUpdateMode();
     }

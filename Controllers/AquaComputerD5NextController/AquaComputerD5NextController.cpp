@@ -54,6 +54,85 @@ std::string AquaComputerD5NextController::GetLocation()
     return location;
 }
 
+/* Geometry only: decoded allocations do not prove physical connectivity.
+ * The known g6/g7 overlap is retained as metadata, never a third output. */
+static bool ValidAllocations(const D5NextRGBpxConfiguration& snapshot)
+{
+    const auto& pump = snapshot.groups[6];
+    if(pump.strip != 1 || pump.led_start != 0 || pump.count != 6) return false;
+    for(unsigned int i = 0; i < 8; i++)
+    {
+        const auto& group = snapshot.groups[i];
+        unsigned int limit = i < 6 ? 90 : 6;
+        if(group.strip != (i < 6 ? 0 : 1) || group.led_start > limit
+        || group.count > limit - group.led_start || (group.mode != 0 && group.count == 0)
+        || D5NextEffects::Find(group.mode) == nullptr) return false;
+        if(i < 6 && group.mode != 0 && group.count != 0)
+        {
+            for(unsigned int j = 0; j < i; j++)
+            {
+                const auto& other = snapshot.groups[j];
+                if(other.mode != 0 && other.count != 0
+                && group.led_start < other.led_start + other.count
+                && other.led_start < group.led_start + group.count) return false;
+            }
+        }
+    }
+    const auto& overlay = snapshot.groups[7];
+    return overlay.mode == 0 || (overlay.led_start == 0 && overlay.count == 6);
+}
+
+D5NextResult AquaComputerD5NextController::ReadConfiguration()
+{
+    std::lock_guard<std::mutex> lock(ownership->transaction_mutex);
+    write_authorized = false;
+    if(read_attempted || transfer_failed) return D5NEXT_NOT_READY;
+    read_attempted = true;
+    wchar_t serial[256] = {};
+    if(!ownership->HasSerial() || hid_get_serial_number_string(dev.get(), serial, 256) != 0
+    || serial[255] != 0 || !ownership->MatchesSerial(serial)) return D5NEXT_PRECONDITION_FAILED;
+    unsigned char status[163] = {};
+    /* Passive periodic Input01, bounded wait, no retry or status control GET. */
+    int received = hid_read_timeout(dev.get(), status, sizeof(status), 2000);
+    if(received != 162 || status[0] != 1)
+    {
+        transfer_failed = true;
+        return D5NEXT_IO_ERROR;
+    }
+    unsigned int observed_firmware = (status[13] << 8) | status[14];
+    if(observed_firmware != D5NEXT_FIRMWARE) return D5NEXT_UNSUPPORTED_FIRMWARE;
+    unsigned char report[809] = { 3 };
+    if(hid_get_feature_report(dev.get(), report, sizeof(report)) != 809)
+    {
+        transfer_failed = true;
+        return D5NEXT_IO_ERROR;
+    }
+    D5NextRGBpxConfiguration decoded;
+    const D5NextIdentity identity = { D5NEXT_VID, D5NEXT_PID, D5NEXT_INTERFACE, observed_firmware };
+    auto result = D5NextRGBpx::Decode(report, sizeof(report), identity, decoded);
+    if(result != D5NEXT_OK) return result;
+    if(!ValidAllocations(decoded)) return D5NEXT_PRECONDITION_FAILED;
+    configuration = decoded;
+    firmware = observed_firmware;
+    layout = D5NEXT_LAYOUT_DOCUMENTED_809;
+    configuration_valid = true;
+    return D5NEXT_OK;
+}
+
+bool AquaComputerD5NextController::GetConfiguration(D5NextRGBpxConfiguration& snapshot)
+{
+    std::lock_guard<std::mutex> lock(ownership->transaction_mutex);
+    if(!configuration_valid) return false;
+    snapshot = configuration;
+    return true;
+}
+
+unsigned int AquaComputerD5NextController::GetFirmware()
+{
+    std::lock_guard<std::mutex> lock(ownership->transaction_mutex);
+    return firmware;
+}
+
 D5NextResult AquaComputerD5NextController::SetLighting(unsigned int effect, unsigned int color,
                                                       unsigned int brightness)
 {

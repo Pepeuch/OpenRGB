@@ -42,6 +42,16 @@ int hid_get_feature_report(hid_device*, unsigned char*, std::size_t)
     CHECK(false);
     return -1;
 }
+int hid_read_timeout(hid_device*, unsigned char*, std::size_t, int)
+{
+    CHECK(false);
+    return -1;
+}
+int hid_get_serial_number_string(hid_device*, wchar_t*, std::size_t)
+{
+    CHECK(false);
+    return -1;
+}
 int hid_send_feature_report(hid_device*, const unsigned char*, std::size_t)
 {
     CHECK(false);
@@ -89,7 +99,7 @@ int main()
         RGBController_AquaComputerD5Next rgb(std::unique_ptr<AquaComputerD5NextController>(
             new AquaComputerD5NextController(D5NextOwnership::Acquire(path, L"production-sentinel"),
                                              D5NextHIDHandle(&sentinel))));
-        CHECK(rgb.GetLEDCount() == 6 && rgb.GetZoneCount() == 1 && !rgb.SupportsPerZoneModes());
+        CHECK(rgb.GetLEDCount() == 0 && rgb.GetZoneCount() == 0 && !rgb.SupportsPerZoneModes());
         CHECK(rgb.GetModeCount() == 1 && rgb.GetModeName(0) == "Read only");
         rgb.DeviceUpdateMode();
         rgb.DeviceUpdateLEDs();

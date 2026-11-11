@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <thread>
 #include "OfflineDetection.h"
 #include "RGBController_AquaComputerD5Next.h"
@@ -82,6 +83,15 @@ static void MakeFixture(unsigned char* report, unsigned int seed = 19)
     report[2]   = 3;
     report[237] = 87;
     report[239] = 0x00;
+    const unsigned int starts[] = {0,13,33,48,63,78,0,0};
+    const unsigned int counts[] = {13,20,15,15,15,12,6,0};
+    for(unsigned int group = 0; group < 8; group++)
+    {
+        report[240 + group*70] = group < 6 ? 0 : 1;
+        report[241 + group*70] = starts[group];
+        report[242 + group*70] = counts[group];
+        report[243 + group*70] = group == 7 ? 0 : 2;
+    }
     report[660] = 1;
     report[661] = 0;
     report[662] = 6;
@@ -225,6 +235,8 @@ static void TestColors()
 struct hid_device_
 {
     unsigned char report[809];
+    const wchar_t* serial = L"offline-pump-serial";
+    bool metadata_read = false;
     int read_result = 809;
     int write_result = 809;
     unsigned int reads = 0;
@@ -254,10 +266,11 @@ int hid_get_feature_report(hid_device* dev, unsigned char* data, std::size_t len
     {
         mock_failures++;
     }
-    if(dev->in_transaction.exchange(true))
+    if(!dev->metadata_read && dev->in_transaction.exchange(true))
     {
         dev->overlap = true;
     }
+    dev->metadata_read = false;
     dev->reads++;
     std::this_thread::yield();
     memcpy(data, dev->report, length);
@@ -266,6 +279,20 @@ int hid_get_feature_report(hid_device* dev, unsigned char* data, std::size_t len
         dev->in_transaction = false;
     }
     return dev->read_result;
+}
+
+int hid_get_serial_number_string(hid_device* dev, wchar_t* serial, std::size_t count)
+{
+    std::wcsncpy(serial, dev->serial, count);
+    return 0;
+}
+
+int hid_read_timeout(hid_device* dev, unsigned char* data, std::size_t length, int)
+{
+    std::memset(data, 0, length);
+    data[0] = 1; data[13] = 4; data[14] = 3;
+    dev->metadata_read = true;
+    return 162;
 }
 
 int hid_send_feature_report(hid_device* dev, const unsigned char* data, std::size_t length)
@@ -545,6 +572,7 @@ static void TestReadOnlyAdapter()
 {
     hid_device_ fake;
     MakeFixture(fake.report);
+    fake.serial = L"adapter-serial";
     fake.report[663] = D5NEXT_EFFECT_RAINBOW;
     FixCRC(fake.report);
     {
@@ -560,9 +588,10 @@ static void TestReadOnlyAdapter()
         CHECK(native->ApplyRGBpxPatch(change) == D5NEXT_UNSUPPORTED_TRANSITION);
         CHECK(fake.reads == 1 && fake.writes == 0);
         fake.in_transaction = false;
+        CHECK(native->ReadConfiguration() == D5NEXT_OK);
         RGBController_AquaComputerD5Next rgb(std::move(native));
         CHECK(rgb.GetDeviceType() == DEVICE_TYPE_COOLER);
-        CHECK(rgb.GetZoneCount() == 1 && rgb.GetLEDCount() == 6);
+        CHECK(rgb.GetZoneCount() == 2 && rgb.GetLEDCount() == 19);
         CHECK(rgb.GetModeCount() == 1 && rgb.GetModeName(0) == "Read only");
         CHECK(rgb.GetModeFlags(0) == 0 && rgb.GetModeColorsCount(0) == 0);
         CHECK(rgb.GetActiveMode() == 0);
@@ -576,7 +605,7 @@ static void TestReadOnlyAdapter()
         rgb.UpdateLEDs();
         rgb.SaveMode();
         rgb.SetDeviceSpecificConfiguration({ { "write_enabled", true } });
-        CHECK(fake.reads == 1 && fake.writes == 0);
+        CHECK(fake.reads == 2 && fake.writes == 0);
     }
     CHECK(fake.closes == 1 && fake.writes == 0);
     std::puts("PASS Rainbow->Static refusal does not publish Static or send SET");
@@ -635,7 +664,7 @@ static void TestDetection()
         CHECK(devices[0]->GetModeFlags(0) == 0);
         CHECK(devices[0]->GetModeColorMode(0) == MODE_COLORS_NONE);
         CHECK(fake.closes == scan && mock_opens == scan + 1);
-        CHECK(fake.reads == 0 && fake.writes == 0);
+        CHECK(fake.reads == scan + 1 && fake.writes == 0);
         /* A profile/app callback during registration cannot bypass the
            unknown-firmware gate, and saving has no implementation. */
         devices[0]->UpdateZoneLEDs(0);
@@ -646,7 +675,7 @@ static void TestDetection()
         devices[0]->UpdateLEDs();
         devices[0]->SetCustomMode();
         devices[0]->SaveMode();
-        CHECK(fake.reads == 0 && fake.writes == 0);
+        CHECK(fake.reads == scan + 1 && fake.writes == 0);
     }
     SimulatedScan(detector, nullptr, devices);
     CHECK(devices.empty() && fake.closes == 3);
@@ -686,7 +715,7 @@ static void TestDetection()
     CHECK(devices.size() == 1 && mock_opens == 5);
     SimulatedScan(detector, nullptr, devices);
     CHECK(devices.empty() && fake.closes == 4);
-    CHECK(fake.reads == 0 && fake.writes == 0);
+    CHECK(fake.reads == 4 && fake.writes == 0);
     discoverable_device = nullptr;
     std::puts("PASS native registration, simulated scans, matching, permissions failure, and handle lifetime");
 }

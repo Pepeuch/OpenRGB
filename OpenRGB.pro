@@ -22,6 +22,11 @@ CONFIG +=   c++17                                                               
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
+# Explicitly opt in to the D5 NEXT read-only configuration discovery.
+contains(CONFIG, d5next_readonly) {
+    DEFINES += OPENRGB_D5NEXT_READ_ONLY_DETECTION
+}
+
 #-----------------------------------------------------------------------------------------------#
 # Application Configuration                                                                     #
 #-----------------------------------------------------------------------------------------------#

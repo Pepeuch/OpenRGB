@@ -22,7 +22,7 @@
 | Registration requires an explicit read-only build option |
 | or the offline test target. Default builds do no I/O.     |
 | No firmware/profile is approved for configuration writes. |
-| Scan-time construction sends no feature reports.          |
+| Explicit discovery reads Input01/Feature03, never SET.     |
 \*---------------------------------------------------------*/
 DetectedControllers DetectAquaComputerD5NextControllers(hid_device_info* info, const std::string& /*name*/)
 {
@@ -59,6 +59,12 @@ DetectedControllers DetectAquaComputerD5NextControllers(hid_device_info* info, c
     }
     std::unique_ptr<AquaComputerD5NextController> controller(
         new AquaComputerD5NextController(std::move(ownership), std::move(dev)));
+    D5NextResult result = controller->ReadConfiguration();
+    if(result != D5NEXT_OK)
+    {
+        LOG_DEBUG("[AquaComputer D5 NEXT] Read-only discovery refused: %s", D5NextProtocol::ResultString(result));
+        return detected_controllers;
+    }
     std::unique_ptr<RGBController_AquaComputerD5Next> rgb_controller(
         new RGBController_AquaComputerD5Next(std::move(controller)));
     detected_controllers.push_back(rgb_controller.get());

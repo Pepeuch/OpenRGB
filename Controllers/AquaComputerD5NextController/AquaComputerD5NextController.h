@@ -20,8 +20,8 @@ class AquaComputerD5NextController
 public:
     /*-----------------------------------------------------*\
     | Takes ownership of a reserved path and open handle.    |
-    | sends nothing. Production has no approved firmware    |
-    | profile and refuses all feature-report access.        |
+    | Constructor sends nothing. ReadConfiguration is an    |
+    | explicit read-only path, never write authorization.   |
     \*-----------------------------------------------------*/
     AquaComputerD5NextController(std::unique_ptr<D5NextOwnership> ownership, D5NextHIDHandle dev_handle);
 #ifdef OPENRGB_D5NEXT_OFFLINE_TESTS
@@ -31,6 +31,9 @@ public:
     ~AquaComputerD5NextController();
 
     std::string GetLocation();
+    D5NextResult ReadConfiguration();
+    bool GetConfiguration(D5NextRGBpxConfiguration& snapshot);
+    unsigned int GetFirmware();
     D5NextResult SetLighting(unsigned int effect, unsigned int color, unsigned int brightness);
     D5NextResult SetOff();
     D5NextResult ApplyRGBpxPatch(const D5NextRGBpxPatch& patch);
@@ -43,6 +46,9 @@ private:
     unsigned int    firmware;
     bool            write_authorized;
     bool            transfer_failed;
+    bool            read_attempted = false;
+    bool            configuration_valid = false;
+    D5NextRGBpxConfiguration configuration = {};
 
     D5NextResult UpdateLighting(bool off, unsigned int effect, unsigned int color, unsigned int brightness);
     D5NextResult ReadFresh(unsigned char* report);

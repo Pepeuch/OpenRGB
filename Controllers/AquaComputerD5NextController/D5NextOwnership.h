@@ -25,6 +25,7 @@ public:
 
     const std::string& Path() const noexcept { return path; }
     bool HasSerial() const noexcept { return !serial.empty(); }
+    bool MatchesSerial(const wchar_t* value) const { return HasSerial() && value != nullptr && serial == value; }
     std::mutex transaction_mutex;
 
 private:
