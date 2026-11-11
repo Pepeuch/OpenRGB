@@ -42,6 +42,7 @@ enum D5NextReadResult
     D5NEXT_READ_IDENTITY_FAILED,
     D5NEXT_READ_TRANSFER_FAILED,
     D5NEXT_READ_INVALID_REPORT,
+    D5NEXT_READ_STATUS_FAILED,
 };
 
 class D5NextReadOnly
@@ -55,12 +56,14 @@ public:
     static std::vector<std::string> FindControllerProcesses(const std::filesystem::path& proc = "/proc");
     /*-----------------------------------------------------*\
     | At most one GET, no retry, and no device write API.   |
+    | Optional firmware requires one passive Input01 first. |
     | The descriptor and permissions must pass first.      |
     | Process checks and flock are cooperative safeguards, |
     | not proof of exclusive ownership against all clients. |
     \*-----------------------------------------------------*/
     static D5NextReadResult GetFeatureOnce(const D5NextDeviceInfo& device, const D5NextDescriptor& descriptor,
                                           bool competing_process, unsigned char* report,
-                                          int& received, int& system_error, D5NextResult& validation);
+                                          int& received, int& system_error, D5NextResult& validation,
+                                          unsigned int* firmware = nullptr);
     static const char* ReadResultString(D5NextReadResult result);
 };

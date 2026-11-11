@@ -18,6 +18,7 @@
 #include <fstream>
 #include <linux/hidraw.h>
 #include <linux/input.h>
+#include <poll.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include "D5NextReadOnly.h"
@@ -46,6 +47,41 @@ static unsigned int closes;
 static unsigned int raw_queries;
 static unsigned int feature_queries;
 static unsigned char response[809];
+static int status_poll = 1, status_size = 162;
+static unsigned int status_firmware = 1027;
+static unsigned char status_id = 1;
+static unsigned int status_reads;
+
+extern "C" int __wrap_poll(struct pollfd* fds, nfds_t count, int timeout)
+{
+    CHECK(count == 1 && fds[0].fd == 4242 && timeout == 2000);
+    fds[0].revents = status_poll == 1 ? POLLIN : 0;
+    return status_poll;
+}
+
+extern "C" ssize_t __wrap_read(int fd, void* output, std::size_t size)
+{
+    CHECK(fd == 4242 && size == 163);
+    status_reads++;
+    auto* bytes = static_cast<unsigned char*>(output);
+    memset(bytes,0,size);
+    bytes[0] = status_id;
+    bytes[13] = (unsigned char)(status_firmware >> 8);
+    bytes[14] = (unsigned char)status_firmware;
+    return status_size;
+}
+
+extern "C" int __wrap___poll_chk(struct pollfd* fds, nfds_t count, int timeout, std::size_t capacity)
+{
+    CHECK(capacity >= sizeof(struct pollfd));
+    return __wrap_poll(fds,count,timeout);
+}
+
+extern "C" ssize_t __wrap___read_chk(int fd, void* output, std::size_t size, std::size_t capacity)
+{
+    CHECK(capacity >= size);
+    return __wrap_read(fd,output,size);
+}
 
 extern "C" int __wrap_stat(const char* path, struct stat* status)
 {
@@ -237,6 +273,48 @@ static void WriteText(const std::filesystem::path& path, const char* text)
     CHECK(stream.good());
 }
 
+static void TestPassiveFirmware()
+{
+    D5NextDeviceInfo device;
+    device.dev_node = "/offline/d5-next";
+    D5NextDescriptor descriptor;
+    descriptor.feature_bits[3] = 6464;
+    descriptor.input_bits[1] = 161 * 8;
+    for(unsigned int scenario = 0; scenario < 6; scenario++)
+    {
+        ResetMock();
+        status_poll = 1; status_size = 162; status_id = 1; status_firmware = 1027; status_reads = 0;
+        if(scenario == 1) status_poll = 0;
+        if(scenario == 2) status_size = 161;
+        if(scenario == 3) status_id = 2;
+        if(scenario == 4) status_firmware = 1028;
+        if(scenario == 5) status_poll = -1;
+        unsigned char output[809]; memset(output,0xA5,sizeof(output));
+        unsigned int firmware = 0;
+        int received, error;
+        D5NextResult validation;
+        auto result = D5NextReadOnly::GetFeatureOnce(device,descriptor,false,output,received,error,validation,&firmware);
+        if(result != (scenario == 0 ? D5NEXT_READ_OK : D5NEXT_READ_STATUS_FAILED))
+            std::fprintf(stderr,"status scenario=%u result=%d firmware=%u reads=%u GET=%u\n",scenario,result,firmware,status_reads,feature_queries);
+        CHECK(result == (scenario == 0 ? D5NEXT_READ_OK : D5NEXT_READ_STATUS_FAILED));
+        CHECK(opens == 1 && closes == 1);
+        CHECK(feature_queries == (scenario == 0 ? 1U : 0U));
+        CHECK(status_reads == (scenario == 1 || scenario == 5 ? 0U : 1U));
+        if(scenario == 0) CHECK(firmware == 1027 && received == 809);
+        else for(unsigned char byte : output) CHECK(byte == 0xA5);
+    }
+    ResetMock();
+    descriptor.input_bits[1] = 0;
+    unsigned char output[809];
+    unsigned int firmware;
+    int received, error;
+    D5NextResult validation;
+    CHECK(D5NextReadOnly::GetFeatureOnce(device,descriptor,false,output,received,error,validation,&firmware)
+          == D5NEXT_READ_DESCRIPTOR_MISMATCH);
+    CHECK(opens == 0 && closes == 0 && feature_queries == 0);
+    std::puts("PASS one passive Input01 firmware read before GET, no retry or GET after status errors");
+}
+
 static void TestDiscovery()
 {
     std::filesystem::path root = std::filesystem::current_path() / ".build/d5next-readonly/fixture";
@@ -271,6 +349,7 @@ int main()
 {
     TestDescriptors();
     TestAcquisition();
+    TestPassiveFirmware();
     TestDiscovery();
     std::printf("PASS read-only diagnostic offline tests (%u checks); HID syscalls wrapped\n", checks);
     return 0;

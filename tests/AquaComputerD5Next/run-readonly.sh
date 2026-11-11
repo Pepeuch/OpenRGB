@@ -21,6 +21,6 @@ fi
     -Itools/AquaComputerD5Next -IControllers/AquaComputerD5NextController -Idependencies/CRCpp \
     tests/AquaComputerD5Next/ReadOnlyTests.cpp tools/AquaComputerD5Next/D5NextReadOnly.cpp \
     Controllers/AquaComputerD5NextController/D5NextProtocol.cpp \
-    -Wl,--wrap=open,--wrap=close,--wrap=flock,--wrap=faccessat,--wrap=stat,--wrap=fstat,--wrap=ioctl \
+    -Wl,--wrap=open,--wrap=close,--wrap=flock,--wrap=faccessat,--wrap=stat,--wrap=fstat,--wrap=ioctl,--wrap=poll,--wrap=read,--wrap=__poll_chk,--wrap=__read_chk \
     -o ".build/d5next-readonly/readonly-tests$test_suffix"
 ".build/d5next-readonly/readonly-tests$test_suffix"

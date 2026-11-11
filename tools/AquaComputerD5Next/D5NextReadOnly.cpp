@@ -17,6 +17,7 @@
 #include <fstream>
 #include <linux/hidraw.h>
 #include <linux/input.h>
+#include <poll.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -231,8 +232,10 @@ std::vector<std::string> D5NextReadOnly::FindControllerProcesses(const std::file
 
 D5NextReadResult D5NextReadOnly::GetFeatureOnce(const D5NextDeviceInfo& device, const D5NextDescriptor& descriptor,
                                               bool competing_process, unsigned char* report,
-                                              int& received, int& system_error, D5NextResult& validation)
+                                              int& received, int& system_error, D5NextResult& validation,
+                                              unsigned int* firmware)
 {
+    if(firmware != nullptr) *firmware = 0;
     received     = 0;
     system_error = 0;
     validation   = D5NEXT_NOT_READY;
@@ -247,7 +250,8 @@ D5NextReadResult D5NextReadOnly::GetFeatureOnce(const D5NextDeviceInfo& device, 
     {
         return D5NEXT_READ_COMPETING_PROCESS;
     }
-    if(descriptor.feature_bits[3] != 808 * 8 || report == nullptr)
+    if(descriptor.feature_bits[3] != 808 * 8 || report == nullptr
+    || (firmware != nullptr && descriptor.input_bits[1] != 161 * 8))
     {
         return D5NEXT_READ_DESCRIPTOR_MISMATCH;
     }
@@ -274,10 +278,34 @@ D5NextReadResult D5NextReadOnly::GetFeatureOnce(const D5NextDeviceInfo& device, 
         close(fd);
         return D5NEXT_READ_IDENTITY_FAILED;
     }
+    if(firmware != nullptr)
+    {
+        /* One passive periodic Input01, not a USB control request. No retry. */
+        struct pollfd readiness = { fd, POLLIN, 0 };
+        unsigned char status[163];
+        if(poll(&readiness, 1, 2000) != 1 || !(readiness.revents & POLLIN)
+        || (readiness.revents & (POLLERR | POLLHUP | POLLNVAL)))
+        {
+            close(fd);
+            return D5NEXT_READ_STATUS_FAILED;
+        }
+        ssize_t length = read(fd, status, sizeof(status));
+        if(length != 162 || status[0] != 1)
+        {
+            close(fd);
+            return D5NEXT_READ_STATUS_FAILED;
+        }
+        *firmware = (status[13] << 8) | status[14];
+        if(*firmware != 1027)
+        {
+            close(fd);
+            return D5NEXT_READ_STATUS_FAILED;
+        }
+    }
     unsigned char buffer[D5NEXT_REPORT_SIZE] = { D5NEXT_REPORT_ID };
     /*-----------------------------------------------------*\
     | The only USB request in this tool. No loop or retry.  |
-    | No SET, Output, reset, status polling or save API.     |
+    | No SET, Output, reset, retry or save API.             |
     \*-----------------------------------------------------*/
     received = ioctl(fd, HIDIOCGFEATURE(sizeof(buffer)), buffer);
     system_error = received < 0 ? errno : 0;
@@ -308,6 +336,7 @@ const char* D5NextReadOnly::ReadResultString(D5NextReadResult result)
     case D5NEXT_READ_IDENTITY_FAILED:       return "opened device identity changed or could not be verified; no feature request";
     case D5NEXT_READ_TRANSFER_FAILED:       return "GET_FEATURE failed; no retry";
     case D5NEXT_READ_INVALID_REPORT:        return "GET_FEATURE returned an invalid or unexpected report; no retry";
+    case D5NEXT_READ_STATUS_FAILED:         return "passive Input01 missing, invalid, or firmware not 1027; no GET sent";
     default:                               return "unknown diagnostic result";
     }
 }

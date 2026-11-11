@@ -103,6 +103,10 @@ static int RunDiagnostic(int argc, char** argv)
         std::printf("device: %s, interface=%s\n", device.dev_node.c_str(), device.interface_path.filename().c_str());
         PrintText("manufacturer", device.usb_path / "manufacturer");
         PrintText("product", device.usb_path / "product");
+        std::string serial;
+        std::printf("USB serial: %s (value withheld)\n",
+                    D5NextReadOnly::ReadText(device.usb_path / "serial", serial) && !serial.empty() ? "available" : "unavailable");
+        std::printf("USB topology: %s; HID interface: 1\n", device.interface_path.filename().c_str());
         PrintText("USB bcdDevice (not firmware approval)", device.usb_path / "bcdDevice");
         std::error_code error;
         std::filesystem::path driver = std::filesystem::read_symlink(device.hid_path / "driver", error);
@@ -151,8 +155,10 @@ static int RunDiagnostic(int argc, char** argv)
         int received;
         int system_error;
         D5NextResult validation;
+        unsigned int observed_firmware = 0;
         D5NextReadResult result = D5NextReadOnly::GetFeatureOnce(device, descriptor, !processes.empty(), report,
-                                                                received, system_error, validation);
+                                                                received, system_error, validation, &observed_firmware);
+        std::printf("firmware from passive Input01: %u (not USB release_number)\n", observed_firmware);
         std::printf("GET_FEATURE: %s; received=%d; validation=%s\n", D5NextReadOnly::ReadResultString(result),
                     received, D5NextProtocol::ResultString(validation));
         if(system_error != 0)
@@ -166,14 +172,17 @@ static int RunDiagnostic(int argc, char** argv)
         }
         std::printf("report: id=0x%02X length=%d stored_crc=0x%02X%02X calculated_crc=0x%04X\n",
                     report[0], received, report[807], report[808], D5NextProtocol::CalculateCRC(report + 1, 806));
-        D5NextRGBpxController group;
-        D5NextRGBpx::DecodeController(report + 660, 70, group);
-        const D5NextEffectInfo* effect = D5NextEffects::Find(group.mode);
-        std::printf("RGB fields (structure 3; firmware not established by this GET): master=%u strip_flags=0x%02X%02X\n",
+        std::printf("RGB fields (structure 3): master=%u strip_flags=0x%02X%02X\n",
                     report[237], report[238], report[239]);
-        std::printf("group6: strip=%u start=%u count=%u mode=0x%02X (%s) flags=0x%04X H=%u S=%u V=%u\n",
-                    group.strip, group.led_start, group.count, group.mode, effect == nullptr ? "unknown" : effect->name,
-                    group.flags, group.colors[0].hue, group.colors[0].saturation, group.colors[0].value);
+        for(unsigned int index = 0; index < 8; index++)
+        {
+            D5NextRGBpxController group;
+            D5NextRGBpx::DecodeController(report + 240 + 70 * index, 70, group);
+            const D5NextEffectInfo* effect = D5NextEffects::Find(group.mode);
+            std::printf("group%u: strip=%u start=%u count=%u mode=0x%02X (%s) flags=0x%04X H=%u S=%u V=%u\n", index,
+                        group.strip, group.led_start, group.count, group.mode, effect == nullptr ? "unknown" : effect->name,
+                        group.flags, group.colors[0].hue, group.colors[0].saturation, group.colors[0].value);
+        }
     }
     return outcome;
 }
