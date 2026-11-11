@@ -198,3 +198,17 @@ La capture contient1804 Bulk364 et62 Input01, sans Feature03 ni Output02.
 Trois repères par motifs de dominantes complètent la synchronisation nominale.
 Le fond de l'aperçu Windows n'est pas traité comme une preuve de capture live.
 Aucun nouveau paramètre HID ni écriture matérielle n'est ajouté.
+
+### Test7 / capture11 :13 LED externes, sans flux PC observé
+
+Le [rapport de la sortie13 LED](D5NextExternal13LEDAnalysis.md) distingue le
+LED Controller1 externe (groupe0,strip0,start0,count13) du groupe Base de la
+pompe (groupe6,strip1,count6). Les changements de configuration de l'un préservent
+l'autre ; les offsets241/242 sont confrontés aux déplacements/redimensionnements.
+Le second groupe Pump7 est actif et recouvre les mêmes six positions que g6.
+
+Cette capture contient14 Feature03 valides,7 Output02 et93 Input01, **aucun Bulk**.
+Elle ne résout donc pas les deux06 de l'en-tête AMBIENTpx. La bascule System
+aquabus/RGBpx annoncée par l'utilisateur n'y est pas isolée avant/après. Aucune
+commande d'activation de sortie, priorité de recouvrement ou nouvelle écriture
+matérielle n'est déduite ou implémentée.
