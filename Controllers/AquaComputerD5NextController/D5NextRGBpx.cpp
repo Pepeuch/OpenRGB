@@ -198,6 +198,21 @@ D5NextResult D5NextRGBpx::Decode(const unsigned char* report, std::size_t size,
     return D5NEXT_OK;
 }
 
+/* Separate reviewed policy: adding documentary metadata must never enable an
+ * edit. These are the existing lot-6 offline patch modes, not hardware approval. */
+static bool HasReviewedPatchPolicy(unsigned int mode)
+{
+    switch(mode)
+    {
+    case 0x01: case 0x02: case 0x03: case 0x04: case 0x05:
+    case 0x07: case 0x08: case 0x09: case 0x0A: case 0x0B:
+    case 0x0C: case 0x0E: case 0x13:
+        return true;
+    default:
+        return false;
+    }
+}
+
 D5NextResult D5NextRGBpx::BuildPatch(const unsigned char* original, std::size_t size,
                                     const D5NextIdentity& identity, const D5NextRGBpxPatch& patch,
                                     unsigned char* output, std::size_t output_size)
@@ -220,7 +235,7 @@ D5NextResult D5NextRGBpx::BuildPatch(const unsigned char* original, std::size_t 
     {
         return D5NEXT_INVALID_GROUP;
     }
-    /* No allocation changes, external groups or overlapping unused group 7. */
+    /* No allocation changes or edits to groups 0..5/7. Group 7 may be active. */
     if(patch.group != D5NEXT_INTERNAL_GROUP)
     {
         return D5NEXT_UNSUPPORTED_OPERATION;
@@ -232,7 +247,8 @@ D5NextResult D5NextRGBpx::BuildPatch(const unsigned char* original, std::size_t 
         return D5NEXT_PRECONDITION_FAILED;
     }
     const D5NextEffectInfo* effect = D5NextEffects::Find(group.mode);
-    if(effect == nullptr || !effect->captured || effect->requires_pc_transport)
+    if(!HasReviewedPatchPolicy(group.mode) || effect == nullptr
+    || !effect->captured || effect->requires_pc_transport)
     {
         return D5NEXT_UNSUPPORTED_OPERATION;
     }

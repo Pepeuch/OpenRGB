@@ -19,6 +19,7 @@
 #include <vector>
 #include "D5NextRGBpx.h"
 #include "D5NextSystemCommands.h"
+#include "DocumentaryBulk.h"
 
 static unsigned int checks;
 #define CHECK(condition) Check((condition), #condition, __LINE__)
@@ -525,6 +526,7 @@ static void TestCatalogue(const char* csv_path)
     {
         const D5NextEffectInfo* effect = D5NextEffects::At(index);
         CHECK(effect != nullptr && !ids[effect->id]);
+        CHECK(!effect->production_editable);
         ids[effect->id] = true;
         parameters += effect->parameter_count;
         flags += effect->flag_count;
@@ -535,7 +537,7 @@ static void TestCatalogue(const char* csv_path)
             CHECK(!effect->parameters[item].range_known);
         }
     }
-    CHECK(parameters == 33 && flags == 26 && captured == 13 && pc == 5);
+    CHECK(parameters == 64 && flags == 43 && captured == 23 && pc == 5);
     CHECK(strcmp(D5NextEffects::Parameter(0x0E, 0)->name, "Intensity") == 0);
     CHECK(strcmp(D5NextEffects::Parameter(0x0B, 4)->name, "Color change speed") == 0);
     CHECK(D5NextEffects::Parameter(0x0B, 3) == nullptr);
@@ -625,15 +627,327 @@ static void TestCatalogue(const char* csv_path)
     CHECK(count == 66);
 }
 
+
+/* No fixtures, CSV or report parsing: interrogate the linked production table
+ * and require lookup functions to return its actual member addresses. */
+static void TestLinkedCatalogueIntegrity()
+{
+    const struct
+    {
+        unsigned int id;
+        const char* name;
+        unsigned int parameter_indices;
+        unsigned int flag_bits;
+        D5NextHostEvidence host;
+    } expected[] = {
+        {0x0D,"Bar1",0,0,D5NEXT_HOST_UNKNOWN},
+        {0x0F,"Rain1",0x00F,0x1A,D5NEXT_HOST_UNKNOWN},
+        {0x10,"Rain2",0x00F,0x1A,D5NEXT_HOST_UNKNOWN},
+        {0x11,"Rain3",0x00F,0x1A,D5NEXT_HOST_UNKNOWN},
+        {0x12,"Switch",0,0,D5NEXT_HOST_UNKNOWN},
+        {0x14,"Sound1",0,0,D5NEXT_HOST_PROBABLE},
+        {0x15,"Sound2",0x0BB,0x2F,D5NEXT_HOST_PROBABLE},
+        {0x16,"Sound3",0x1FF,0,D5NEXT_HOST_PROBABLE},
+        {0x17,"Sound4",0x01D,0x07,D5NEXT_HOST_PROBABLE},
+        {0x18,"AmbientPx",0,0,D5NEXT_HOST_OBSERVED},
+    };
+    unsigned int parameters = 0, isolated = 0, coupled = 0, flags = 0, filters = 0, colors = 0;
+    for(const auto& item : expected)
+    {
+        const auto* effect = D5NextEffects::Find(item.id);
+        CHECK(effect && effect->id == item.id && strcmp(effect->name,item.name) == 0);
+        CHECK(effect->captured && !effect->production_editable && effect->host_dependency == item.host);
+        unsigned int enumerated = 0;
+        for(unsigned int i = 0; i < D5NextEffects::Count(); i++)
+            enumerated += D5NextEffects::At(i) == effect;
+        CHECK(enumerated == 1);
+        unsigned int seen_indices = 0, seen_flags = 0;
+        CHECK((effect->parameters != nullptr) == (effect->parameter_count != 0));
+        CHECK((effect->flags != nullptr) == (effect->flag_count != 0));
+        for(unsigned int i = 0; i < effect->parameter_count; i++)
+        {
+            const auto& parameter = effect->parameters[i];
+            CHECK(parameter.index < 12 && !(seen_indices & (1U << parameter.index)));
+            seen_indices |= 1U << parameter.index;
+            CHECK(D5NextEffects::Parameter(item.id,parameter.index) == &parameter);
+            CHECK(parameter.name && parameter.frame && parameter.observed_values && parameter.observed_count);
+            CHECK(!parameter.range_known);
+            const bool is_coupled = item.id == 0x15
+                && (parameter.index == 1 || parameter.index == 3 || parameter.index == 5);
+            CHECK(parameter.evidence == (is_coupled ? D5NEXT_COMPATIBLE : D5NEXT_ISOLATED));
+            parameters++;
+            is_coupled ? coupled++ : isolated++;
+        }
+        CHECK(seen_indices == item.parameter_indices);
+        for(unsigned int index = 0; index <= 12; index++)
+            CHECK((D5NextEffects::Parameter(item.id,index) != nullptr)
+                  == ((item.parameter_indices & (1U << index)) != 0));
+        for(unsigned int i = 0; i < effect->flag_count; i++)
+        {
+            const auto& flag = effect->flags[i];
+            CHECK(flag.mask && !(seen_flags & flag.mask));
+            seen_flags |= flag.mask;
+            CHECK(D5NextEffects::Flag(item.id,flag.mask) == &flag);
+            CHECK(flag.name && flag.frame && flag.evidence == D5NEXT_ISOLATED);
+            flags++;
+        }
+        CHECK(seen_flags == item.flag_bits);
+        for(unsigned int mask = 1; mask <= 0x8000; mask <<= 1)
+            CHECK((D5NextEffects::Flag(item.id,mask) != nullptr) == ((item.flag_bits & mask) != 0));
+        CHECK(D5NextEffects::Flag(item.id,0) == nullptr);
+        CHECK(effect->source_filter_count == (item.id == 0x15 ? 2U : 0U));
+        CHECK(effect->color_count == (item.id == 0x15 ? 2U : 0U));
+        for(unsigned int i = 0; i < effect->source_filter_count; i++)
+        {
+            const auto& filter = effect->source_filters[i];
+            CHECK(filter.index == i && filter.evidence == D5NEXT_ISOLATED && filter.observed_count == 2);
+            CHECK(filter.observed_values[0] == 1 && filter.observed_values[1] == (i == 0 ? 38 : 58));
+            CHECK(strcmp(filter.name,i == 0 ? "Rising values" : "Falling values") == 0);
+            filters++;
+        }
+        for(unsigned int i = 0; i < effect->color_count; i++)
+        {
+            const auto& color = effect->colors[i];
+            CHECK(D5NextEffects::Color(item.id,color.index) == &color);
+            CHECK(color.evidence == D5NEXT_ISOLATED && color.components == (D5NEXT_COLOR_H | D5NEXT_COLOR_S));
+            colors++;
+        }
+    }
+    CHECK(parameters == 31 && isolated == 28 && coupled == 3 && flags == 17 && filters == 2 && colors == 2);
+    CHECK(D5NextEffects::Find(6) == nullptr && D5NextEffects::Find(0)->captured == false);
+    std::printf("PASS linked C++ catalogue integrity: %u parameters (%u isolated/%u coupled), %u flags, %u filters, %u colors\n",
+                parameters,isolated,coupled,flags,filters,colors);
+}
+
+static void TestAdvancedCatalogue(const char* path)
+{
+    std::ifstream input(path);
+    CHECK(input.good());
+    std::string line;
+    CHECK((bool)std::getline(input, line));
+    unsigned int isolated = 0, coupled = 0, numeric = 0, flags = 0, filters = 0, colors = 0;
+    while(std::getline(input, line))
+    {
+        auto row = CSVRow(line);
+        CHECK(row.size() == 12);
+        unsigned int mode = std::stoul(row[0], nullptr, 16);
+        const auto* effect = D5NextEffects::Find(mode);
+        CHECK(effect && effect->captured && !effect->production_editable);
+        bool confirmed = row[9].find("confirme") == 0;
+        confirmed ? isolated++ : coupled++;
+        D5NextEvidence evidence = confirmed ? D5NEXT_ISOLATED : D5NEXT_COMPATIBLE;
+        unsigned int index = row[3].find('[') == std::string::npos ? 0
+            : std::stoul(row[3].substr(row[3].find('[') + 1));
+        if(row[3].find("values[") != std::string::npos)
+        {
+            const auto* parameter = D5NextEffects::Parameter(mode, index);
+            CHECK(parameter && parameter->name == row[2] && parameter->evidence == evidence);
+            CHECK(!parameter->range_known && parameter->observed_count > 0);
+            CHECK(parameter->frame == std::stoul(row[7]));
+            if(confirmed) numeric++;
+        }
+        else if(!row[5].empty())
+        {
+            const auto* flag = D5NextEffects::Flag(mode, std::stoul(row[5], nullptr, 16));
+            CHECK(flag && flag->name == row[2] && flag->evidence == evidence);
+            CHECK(flag->frame == std::stoul(row[7]));
+            flags++;
+        }
+        else if(row[3].find("filter[") != std::string::npos)
+        {
+            bool found = false;
+            for(unsigned int i = 0; i < effect->source_filter_count; i++)
+            {
+                const auto& filter = effect->source_filters[i];
+                if(filter.index == index)
+                {
+                    CHECK(filter.name == row[2] && filter.evidence == evidence);
+                    CHECK(filter.frame == std::stoul(row[7]) && filter.observed_count == 2);
+                    found = true;
+                }
+            }
+            CHECK(found);
+            filters++;
+        }
+        else
+        {
+            const auto* color = D5NextEffects::Color(mode, index);
+            CHECK(color && color->role == row[2] && color->evidence == evidence);
+            CHECK(color->components == (D5NEXT_COLOR_H | D5NEXT_COLOR_S));
+            colors++;
+        }
+        unsigned char report[809], output[809];
+        Fixture(report, mode);
+        D5NextRGBpxPatch patch = Patch(D5NEXT_PATCH_PARAMETER, mode);
+        patch.index = index;
+        patch.value = 0;
+        memset(output, 0xA5, sizeof(output));
+        CHECK(D5NextRGBpx::BuildPatch(report, 809, identity, patch, output, 809) == D5NEXT_UNSUPPORTED_OPERATION);
+        CHECK(D5NextRGBpx::AuditPatch(report, 809, identity, patch, output, 809) == D5NEXT_UNSUPPORTED_OPERATION);
+        for(unsigned char byte : output) CHECK(byte == 0xA5);
+    }
+    CHECK(isolated == 49 && coupled == 3 && numeric == 28 && flags == 17 && filters == 2 && colors == 2);
+    const unsigned int advanced[] = { 0x0D,0x0F,0x10,0x11,0x12,0x14,0x15,0x16,0x17,0x18 };
+    for(unsigned int mode : advanced)
+    {
+        const auto* effect = D5NextEffects::Find(mode);
+        CHECK(effect && effect->captured && !effect->production_editable);
+        CHECK(effect->host_dependency == (mode == 0x18 ? D5NEXT_HOST_OBSERVED
+              : mode >= 0x14 ? D5NEXT_HOST_PROBABLE : D5NEXT_HOST_UNKNOWN));
+        unsigned char report[809];
+        Fixture(report, mode);
+        for(unsigned int kind = D5NEXT_PATCH_MASTER; kind <= D5NEXT_PATCH_MODE; kind++)
+        {
+            auto patch = Patch((D5NextPatchKind)kind, mode);
+            Reject(report, 809, identity, patch, D5NEXT_UNSUPPORTED_OPERATION);
+        }
+    }
+    CHECK(D5NextEffects::Parameter(0x0D,0) == nullptr);
+    CHECK(D5NextEffects::Parameter(0x12,0) == nullptr);
+    CHECK(D5NextEffects::Parameter(0x14,0) == nullptr);
+    CHECK(D5NextEffects::Parameter(0x18,0) == nullptr);
+    CHECK(D5NextEffects::Parameter(0x17,1) == nullptr); // Not an isolated CSV attribution.
+    for(unsigned int index : {1U,3U,5U})
+        CHECK(D5NextEffects::Parameter(0x15,index)->evidence == D5NEXT_COMPATIBLE);
+}
+
+static void TestAdvancedLiteralVectors()
+{
+    // Independent documentary values and literal byte offsets, not generated from catalogue.
+    const struct { unsigned int mode,index,offset,before,after; } vectors[] = {
+        {15,0,682,40,20},{15,1,684,4,3},{15,2,686,25,57},{15,3,688,30,63},
+        {16,0,682,50,64},{16,1,684,3,2},{16,2,686,10,38},{16,3,688,15,50},
+        {17,0,682,25,61},{17,1,684,3,2},{17,2,686,60,28},{17,3,688,15,64},
+        {21,0,682,0,2},{21,4,690,25,55},{21,7,696,5,10},
+        {22,0,682,0,1},{22,1,684,0,2},{22,2,686,0,3},{22,3,688,0,4},
+        {22,4,690,5,3},{22,5,692,5,3},{22,6,694,5,3},{22,7,696,5,3},{22,8,698,10,58},
+        {23,0,682,10,43},{23,2,686,2,6},{23,3,688,10,43},{23,4,690,50,25}
+    };
+    CHECK(sizeof(vectors)/sizeof(vectors[0]) == 28);
+    for(const auto& vector : vectors)
+    {
+        const auto* parameter = D5NextEffects::Parameter(vector.mode, vector.index);
+        CHECK(parameter && parameter->evidence == D5NEXT_ISOLATED);
+        for(unsigned int value : {vector.before, vector.after})
+        {
+            bool sample = false;
+            for(unsigned int i = 0; i < parameter->observed_count; i++) sample |= value == (unsigned int)parameter->observed_values[i];
+            CHECK(sample);
+            unsigned char report[809], snapshot[809], rebuilt[809], group[70];
+            Fixture(report, vector.mode);
+            report[vector.offset] = 0; // All these documentary samples are <= 100.
+            report[vector.offset+1] = (unsigned char)value;
+            FixCRC(report); // Independent bitwise CRC oracle.
+            memcpy(snapshot, report, 809);
+            D5NextRGBpxConfiguration decoded;
+            CHECK(D5NextRGBpx::Decode(report,809,identity,decoded) == D5NEXT_OK);
+            CHECK(decoded.groups[6].values[vector.index] == (int)value);
+            CHECK(D5NextRGBpx::EncodeController(decoded.groups[6],group,70) == D5NEXT_OK);
+            CHECK(memcmp(group,report+660,70) == 0);
+            memcpy(rebuilt,report,809);
+            memcpy(rebuilt+660,group,70);
+            unsigned short crc = D5NextProtocol::CalculateCRC(rebuilt+1,806);
+            rebuilt[807] = (unsigned char)(crc>>8); rebuilt[808] = (unsigned char)crc;
+            CHECK(memcmp(snapshot,rebuilt,809) == 0 && memcmp(snapshot,report,809) == 0);
+        }
+    }
+    const struct { unsigned int mode,mask; const char* name; } flags[] = {
+        {15,2,"Reverse direction"},{15,8,"Random color"},{15,16,"Snow"},
+        {16,2,"Reverse direction"},{16,8,"Random color"},{16,16,"Snow"},
+        {17,2,"Reverse direction"},{17,8,"Random color"},{17,16,"Snow"},
+        {21,8,"Reverse direction"},{21,2,"Show bar"},{21,4,"Show ranges"},
+        {21,1,"Fade ranges"},{21,32,"Show peak value"},
+        {23,2,"Effect 1: Random color"},{23,4,"Effect 2: Random color"},{23,1,"Reverse direction"}
+    };
+    for(const auto& flag : flags)
+    {
+        const auto* metadata = D5NextEffects::Flag(flag.mode,flag.mask);
+        CHECK(metadata && strcmp(metadata->name,flag.name) == 0);
+        unsigned char report[809]; Fixture(report,flag.mode);
+        report[664]=0xA5; report[665]=(unsigned char)(0xC0|flag.mask); FixCRC(report);
+        D5NextRGBpxConfiguration decoded;
+        CHECK(D5NextRGBpx::Decode(report,809,identity,decoded) == D5NEXT_OK);
+        CHECK(decoded.groups[6].flags == (0xA5C0|flag.mask));
+        unsigned char encoded[70];
+        CHECK(D5NextRGBpx::EncodeController(decoded.groups[6],encoded,70) == D5NEXT_OK);
+        CHECK(memcmp(encoded,report+660,70) == 0);
+    }
+    // Independent offsets for the remaining four isolated attributions.
+    unsigned char sound[809]; Fixture(sound,0x15);
+    sound[668]=38;sound[669]=58;
+    sound[710]=0x04;sound[711]=0xB9;sound[712]=240; // HSV1 peak, H1209/S240.
+    sound[714]=0x04;sound[715]=0xF7;sound[716]=133; // HSV2 range, H1271/S133.
+    FixCRC(sound);
+    D5NextRGBpxConfiguration sound_config;
+    CHECK(D5NextRGBpx::Decode(sound,809,identity,sound_config) == D5NEXT_OK);
+    CHECK(sound_config.groups[6].source_filter[0]==38 && sound_config.groups[6].source_filter[1]==58);
+    CHECK(sound_config.groups[6].colors[1].hue==1209 && sound_config.groups[6].colors[1].saturation==240);
+    CHECK(sound_config.groups[6].colors[2].hue==1271 && sound_config.groups[6].colors[2].saturation==133);
+    CHECK(sound_config.groups[6].colors[1].value==12 && sound_config.groups[6].colors[2].value==13);
+    unsigned char report[809]; Fixture(report,15);
+    report[682]=0x80;report[683]=0;report[684]=0xFF;report[685]=0xFE;FixCRC(report);
+    D5NextRGBpxConfiguration decoded;
+    CHECK(D5NextRGBpx::Decode(report,809,identity,decoded) == D5NEXT_OK);
+    CHECK(decoded.groups[6].values[0] == -32768 && decoded.groups[6].values[1] == -2);
+    // Capture11 topology, synthetic fields only; active overlapping g7 is preserved.
+    report[240]=0;report[241]=0;report[242]=13;report[243]=2;
+    report[730]=1;report[731]=0;report[732]=6;report[733]=2;FixCRC(report);
+    CHECK(D5NextRGBpx::Decode(report,809,identity,decoded) == D5NEXT_OK);
+    CHECK(decoded.groups[0].count == 13 && decoded.groups[6].count == 6 && decoded.groups[7].mode == 2);
+    for(unsigned int group : {0U,7U})
+    {
+        auto patch = Patch(D5NEXT_PATCH_MASTER,2);patch.group=group;
+        Reject(report,809,identity,patch,D5NEXT_UNSUPPORTED_OPERATION);
+    }
+}
+
+static void TestDocumentaryBulk()
+{
+    unsigned char audio[35] = {0x0A};
+    unsigned short crc = CRC(audio+1,32);
+    audio[33]=(unsigned char)(crc>>8);audio[34]=(unsigned char)crc;
+    CHECK(DecodeObservedBulk35(audio,35));
+    audio[0]=0x0B;CHECK(!DecodeObservedBulk35(audio,35));audio[0]=0x0A;
+    for(unsigned int size=0;size<35;size++) CHECK(!DecodeObservedBulk35(audio,size));
+    CHECK(!DecodeObservedBulk35(audio,36) && !DecodeObservedBulk35(nullptr,35));
+    audio[1]=1;CHECK(!DecodeObservedBulk35(audio,35));audio[1]=0;
+    audio[34]^=1;CHECK(!DecodeObservedBulk35(audio,35));
+    unsigned char screen[364] = {0x0B,6,6,0,
+        0,0,255,0, 0,255,0,0, 0,0,0,255, 0,255,255,0, 0,255,0,255, 0,0,255,255};
+    DocumentaryColor colors[6] = {};
+    CHECK(DecodeObservedBulk364(screen,364,colors));
+    CHECK(colors[0].red==255 && colors[0].green==0 && colors[0].blue==0);
+    CHECK(colors[1].green==255 && colors[2].blue==255);
+    CHECK(colors[3].red==255 && colors[3].green==255 && colors[3].blue==0);
+    DocumentaryColor snapshot[6];memcpy(snapshot,colors,sizeof(colors));
+    for(unsigned int size=0;size<364;size++) CHECK(!DecodeObservedBulk364(screen,size,colors));
+    CHECK(!DecodeObservedBulk364(screen,365,colors) && !DecodeObservedBulk364(nullptr,364,colors));
+    for(unsigned int offset : {0U,1U,2U,3U,4U,28U,363U})
+    {
+        screen[offset]^=1;CHECK(!DecodeObservedBulk364(screen,364,colors));screen[offset]^=1;
+        CHECK(memcmp(snapshot,colors,sizeof(colors))==0);
+    }
+}
+
 int main(int argc, char** argv)
 {
-    CHECK(argc == 2);
+    if(argc == 2 && strcmp(argv[1],"--catalogue-integrity") == 0)
+    {
+        TestLinkedCatalogueIntegrity();
+        std::printf("PASS catalogue-only checks (%u assertions); no CSV or fixture loaded\n",checks);
+        return 0;
+    }
+    CHECK(argc == 3);
+    TestLinkedCatalogueIntegrity();
     TestEndian();
     TestModel();
     TestLiteralControllerVector();
     TestPatches();
     TestValidation();
     TestCatalogue(argv[1]);
+    TestAdvancedCatalogue(argv[2]);
+    TestAdvancedLiteralVectors();
+    TestDocumentaryBulk();
     std::printf("PASS RGBpx codec, signed fields, catalogue/CSV, exact patches, and offline Output02 (%u checks); no HID backend\n", checks);
     return 0;
 }

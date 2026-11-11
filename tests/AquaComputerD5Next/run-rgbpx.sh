@@ -25,4 +25,4 @@ fi
     Controllers/AquaComputerD5NextController/D5NextEffects.cpp \
     Controllers/AquaComputerD5NextController/D5NextSystemCommands.cpp \
     -o ".build/d5next-rgbpx/rgbpx-tests$test_suffix"
-".build/d5next-rgbpx/rgbpx-tests$test_suffix" Documentation/D5NextRGBpxVideoUSBParameters.csv
+".build/d5next-rgbpx/rgbpx-tests$test_suffix" Documentation/D5NextRGBpxVideoUSBParameters.csv Documentation/D5NextRGBpxAdvancedParameters.csv

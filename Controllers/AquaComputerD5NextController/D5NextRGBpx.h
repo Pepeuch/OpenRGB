@@ -93,6 +93,7 @@ struct D5NextFlagInfo
     unsigned short      mask;
     const char*         name;
     unsigned int        frame;
+    D5NextEvidence      evidence = D5NEXT_ISOLATED;
 };
 
 struct D5NextColorInfo
@@ -103,18 +104,40 @@ struct D5NextColorInfo
     D5NextEvidence      evidence;
 };
 
+enum D5NextHostEvidence
+{
+    D5NEXT_HOST_UNKNOWN,
+    D5NEXT_HOST_PROBABLE,
+    D5NEXT_HOST_OBSERVED,
+};
+
+struct D5NextFilterInfo
+{
+    unsigned int index;
+    const char* name;
+    D5NextEvidence evidence;
+    const short* observed_values;
+    unsigned int observed_count;
+    unsigned int frame;
+};
+
 struct D5NextEffectInfo
 {
     unsigned char               id;
     const char*                 name;
-    bool                        captured;
-    bool                        requires_pc_transport;
+    bool                        captured; /* Mode selected, not an edit approval. */
+    bool                        requires_pc_transport; /* Legacy conservative PC classification. */
     const D5NextParameterInfo*   parameters;
     unsigned int                parameter_count;
     const D5NextFlagInfo*        flags;
     unsigned int                flag_count;
     const D5NextColorInfo*       colors;
     unsigned int                color_count;
+    D5NextHostEvidence          host_dependency = D5NEXT_HOST_UNKNOWN;
+    /* Descriptive only. Hardware permission is controlled outside the catalogue. */
+    bool                       production_editable = false;
+    const D5NextFilterInfo*     source_filters = nullptr;
+    unsigned int               source_filter_count = 0;
 };
 
 class D5NextEffects

@@ -187,6 +187,132 @@ static const D5NextColorInfo Blink1_colors[] =
     { 0, "Background", D5NEXT_COLOR_H | D5NEXT_COLOR_S, D5NEXT_ISOLATED },
 };
 
+/* Capture06 facts. Samples are not ranges or hardware write approval. */
+static const short Rain1_parameters_0[] = { 40, 20 };
+static const short Rain1_parameters_1[] = { 4, 3 };
+static const short Rain1_parameters_2[] = { 25, 57 };
+static const short Rain1_parameters_3[] = { 30, 63 };
+static const D5NextParameterInfo Rain1_parameters[] =
+{
+    { 0, "Drop speed", D5NEXT_ISOLATED, Rain1_parameters_0, sizeof(Rain1_parameters_0) / sizeof(short), false, 0, 0, 1225 },
+    { 1, "Drop items", D5NEXT_ISOLATED, Rain1_parameters_1, sizeof(Rain1_parameters_1) / sizeof(short), false, 0, 0, 1479 },
+    { 2, "Drop size", D5NEXT_ISOLATED, Rain1_parameters_2, sizeof(Rain1_parameters_2) / sizeof(short), false, 0, 0, 1771 },
+    { 3, "Drop smoothness", D5NEXT_ISOLATED, Rain1_parameters_3, sizeof(Rain1_parameters_3) / sizeof(short), false, 0, 0, 2051 },
+};
+static const D5NextFlagInfo Rain1_flags[] =
+{
+    { 0x0002, "Reverse direction", 2269, D5NEXT_ISOLATED },
+    { 0x0008, "Random color", 2369, D5NEXT_ISOLATED },
+    { 0x0010, "Snow", 2451, D5NEXT_ISOLATED },
+};
+static const short Rain2_parameters_0[] = { 50, 64 };
+static const short Rain2_parameters_1[] = { 3, 2 };
+static const short Rain2_parameters_2[] = { 10, 38 };
+static const short Rain2_parameters_3[] = { 15, 50 };
+static const D5NextParameterInfo Rain2_parameters[] =
+{
+    { 0, "Drop speed", D5NEXT_ISOLATED, Rain2_parameters_0, sizeof(Rain2_parameters_0) / sizeof(short), false, 0, 0, 3527 },
+    { 1, "Drop items", D5NEXT_ISOLATED, Rain2_parameters_1, sizeof(Rain2_parameters_1) / sizeof(short), false, 0, 0, 3681 },
+    { 2, "Drop size", D5NEXT_ISOLATED, Rain2_parameters_2, sizeof(Rain2_parameters_2) / sizeof(short), false, 0, 0, 3989 },
+    { 3, "Drop smoothness", D5NEXT_ISOLATED, Rain2_parameters_3, sizeof(Rain2_parameters_3) / sizeof(short), false, 0, 0, 4299 },
+};
+static const D5NextFlagInfo Rain2_flags[] =
+{
+    { 0x0002, "Reverse direction", 4425, D5NEXT_ISOLATED },
+    { 0x0008, "Random color", 4545, D5NEXT_ISOLATED },
+    { 0x0010, "Snow", 4641, D5NEXT_ISOLATED },
+};
+static const short Rain3_parameters_0[] = { 25, 61 };
+static const short Rain3_parameters_1[] = { 3, 2 };
+static const short Rain3_parameters_2[] = { 60, 28 };
+static const short Rain3_parameters_3[] = { 15, 64 };
+static const D5NextParameterInfo Rain3_parameters[] =
+{
+    { 0, "Drop speed", D5NEXT_ISOLATED, Rain3_parameters_0, sizeof(Rain3_parameters_0) / sizeof(short), false, 0, 0, 6293 },
+    { 1, "Drop items", D5NEXT_ISOLATED, Rain3_parameters_1, sizeof(Rain3_parameters_1) / sizeof(short), false, 0, 0, 6319 },
+    { 2, "Drop size", D5NEXT_ISOLATED, Rain3_parameters_2, sizeof(Rain3_parameters_2) / sizeof(short), false, 0, 0, 6561 },
+    { 3, "Drop smoothness", D5NEXT_ISOLATED, Rain3_parameters_3, sizeof(Rain3_parameters_3) / sizeof(short), false, 0, 0, 6829 },
+};
+static const D5NextFlagInfo Rain3_flags[] =
+{
+    { 0x0002, "Reverse direction", 7015, D5NEXT_ISOLATED },
+    { 0x0008, "Random color", 7139, D5NEXT_ISOLATED },
+    { 0x0010, "Snow", 7205, D5NEXT_ISOLATED },
+};
+static const short Sound2_parameters_4[] = { 25, 55, 28, 32, 19 };
+static const short Sound2_parameters_7[] = { 5, 10 };
+static const short Sound2_parameters_0[] = { 0, 2 };
+static const short Sound2_filters_0[] = { 1, 38 };
+static const short Sound2_filters_1[] = { 1, 58 };
+static const short Sound2_parameters_3[] = { 1, 2 };
+static const short Sound2_parameters_1[] = { 100, 20 };
+static const short Sound2_parameters_5[] = { 50, 55, 20 };
+static const D5NextParameterInfo Sound2_parameters[] =
+{
+    { 4, "Premiere limite", D5NEXT_ISOLATED, Sound2_parameters_4, sizeof(Sound2_parameters_4) / sizeof(short), false, 0, 0, 11875 },
+    { 7, "Peak hold time", D5NEXT_ISOLATED, Sound2_parameters_7, sizeof(Sound2_parameters_7) / sizeof(short), false, 0, 0, 18529 },
+    { 0, "Borne minimale de la source", D5NEXT_ISOLATED, Sound2_parameters_0, sizeof(Sound2_parameters_0) / sizeof(short), false, 0, 0, 23767 },
+    { 3, "Nombre de limites", D5NEXT_COMPATIBLE, Sound2_parameters_3, sizeof(Sound2_parameters_3) / sizeof(short), false, 0, 0, 12207 },
+    { 1, "Borne maximale de la source", D5NEXT_COMPATIBLE, Sound2_parameters_1, sizeof(Sound2_parameters_1) / sizeof(short), false, 0, 0, 24645 },
+    { 5, "Seconde limite", D5NEXT_COMPATIBLE, Sound2_parameters_5, sizeof(Sound2_parameters_5) / sizeof(short), false, 0, 0, 12207 },
+};
+static const D5NextFilterInfo Sound2_filters[] =
+{
+    { 0, "Rising values", D5NEXT_ISOLATED, Sound2_filters_0, sizeof(Sound2_filters_0) / sizeof(short), 23159 },
+    { 1, "Falling values", D5NEXT_ISOLATED, Sound2_filters_1, sizeof(Sound2_filters_1) / sizeof(short), 23309 },
+};
+static const D5NextColorInfo Sound2_colors[] =
+{
+    { 2, "Couleur de la premiere plage", D5NEXT_COLOR_H | D5NEXT_COLOR_S, D5NEXT_ISOLATED },
+    { 1, "Couleur de pic", D5NEXT_COLOR_H | D5NEXT_COLOR_S, D5NEXT_ISOLATED },
+};
+static const D5NextFlagInfo Sound2_flags[] =
+{
+    { 0x0008, "Reverse direction", 16279, D5NEXT_ISOLATED },
+    { 0x0002, "Show bar", 16439, D5NEXT_ISOLATED },
+    { 0x0004, "Show ranges", 16613, D5NEXT_ISOLATED },
+    { 0x0001, "Fade ranges", 16795, D5NEXT_ISOLATED },
+    { 0x0020, "Show peak value", 16953, D5NEXT_ISOLATED },
+};
+static const short Sound3_parameters_8[] = { 10, 58 };
+static const short Sound3_parameters_0[] = { 0, 1, 5, 4, 3, 2 };
+static const short Sound3_parameters_4[] = { 5, 3 };
+static const short Sound3_parameters_1[] = { 0, 2 };
+static const short Sound3_parameters_5[] = { 5, 3 };
+static const short Sound3_parameters_2[] = { 0, 3 };
+static const short Sound3_parameters_6[] = { 5, 3 };
+static const short Sound3_parameters_3[] = { 0, 4 };
+static const short Sound3_parameters_7[] = { 5, 3 };
+static const D5NextParameterInfo Sound3_parameters[] =
+{
+    { 8, "Rotate color", D5NEXT_ISOLATED, Sound3_parameters_8, sizeof(Sound3_parameters_8) / sizeof(short), false, 0, 0, 31807 },
+    { 0, "Effect 1: sous-mode", D5NEXT_ISOLATED, Sound3_parameters_0, sizeof(Sound3_parameters_0) / sizeof(short), false, 0, 0, 35831 },
+    { 4, "Effect 1: Speed", D5NEXT_ISOLATED, Sound3_parameters_4, sizeof(Sound3_parameters_4) / sizeof(short), false, 0, 0, 37387 },
+    { 1, "Effect 2: sous-mode", D5NEXT_ISOLATED, Sound3_parameters_1, sizeof(Sound3_parameters_1) / sizeof(short), false, 0, 0, 36149 },
+    { 5, "Effect 2: Speed", D5NEXT_ISOLATED, Sound3_parameters_5, sizeof(Sound3_parameters_5) / sizeof(short), false, 0, 0, 37579 },
+    { 2, "Effect 3: sous-mode", D5NEXT_ISOLATED, Sound3_parameters_2, sizeof(Sound3_parameters_2) / sizeof(short), false, 0, 0, 36531 },
+    { 6, "Effect 3: Speed", D5NEXT_ISOLATED, Sound3_parameters_6, sizeof(Sound3_parameters_6) / sizeof(short), false, 0, 0, 37793 },
+    { 3, "Effect 4: sous-mode", D5NEXT_ISOLATED, Sound3_parameters_3, sizeof(Sound3_parameters_3) / sizeof(short), false, 0, 0, 36859 },
+    { 7, "Effect 4: Speed", D5NEXT_ISOLATED, Sound3_parameters_7, sizeof(Sound3_parameters_7) / sizeof(short), false, 0, 0, 37959 },
+};
+static const short Sound4_parameters_0[] = { 10, 43 };
+static const short Sound4_parameters_2[] = { 2, 6 };
+static const short Sound4_parameters_3[] = { 10, 43 };
+static const short Sound4_parameters_4[] = { 50, 25 };
+static const D5NextParameterInfo Sound4_parameters[] =
+{
+    { 0, "Rotate color", D5NEXT_ISOLATED, Sound4_parameters_0, sizeof(Sound4_parameters_0) / sizeof(short), false, 0, 0, 41121 },
+    { 2, "Effect 2: Effect length", D5NEXT_ISOLATED, Sound4_parameters_2, sizeof(Sound4_parameters_2) / sizeof(short), false, 0, 0, 45473 },
+    { 3, "Idle speed", D5NEXT_ISOLATED, Sound4_parameters_3, sizeof(Sound4_parameters_3) / sizeof(short), false, 0, 0, 45643 },
+    { 4, "Activity speed", D5NEXT_ISOLATED, Sound4_parameters_4, sizeof(Sound4_parameters_4) / sizeof(short), false, 0, 0, 45869 },
+};
+static const D5NextFlagInfo Sound4_flags[] =
+{
+    { 0x0002, "Effect 1: Random color", 41471, D5NEXT_ISOLATED },
+    { 0x0004, "Effect 2: Random color", 44657, D5NEXT_ISOLATED },
+    { 0x0001, "Reverse direction", 45927, D5NEXT_ISOLATED },
+};
+
 static const D5NextEffectInfo effects[] =
 {
     { 0x00, "Unused", false, false, nullptr, 0, nullptr, 0, nullptr, 0 },
@@ -201,18 +327,18 @@ static const D5NextEffectInfo effects[] =
     { 0x0A, "Marquee1", true, false, Marquee1_parameters, 3, Marquee1_flags, 3, nullptr, 0 },
     { 0x0B, "Marquee2", true, false, Marquee2_parameters, 3, Marquee2_flags, 2, nullptr, 0 },
     { 0x0C, "Ambient", true, false, Ambient_parameters, 3, nullptr, 0, nullptr, 0 },
-    { 0x0D, "Bar1", false, false, nullptr, 0, nullptr, 0, nullptr, 0 },
+    { 0x0D, "Bar1", true, false, nullptr, 0, nullptr, 0, nullptr, 0, D5NEXT_HOST_UNKNOWN, false },
     { 0x0E, "Candle", true, false, Candle_parameters, 1, nullptr, 0, nullptr, 0 },
-    { 0x0F, "Rain1", false, false, nullptr, 0, nullptr, 0, nullptr, 0 },
-    { 0x10, "Rain2", false, false, nullptr, 0, nullptr, 0, nullptr, 0 },
-    { 0x11, "Rain3", false, false, nullptr, 0, nullptr, 0, nullptr, 0 },
-    { 0x12, "Switch", false, false, nullptr, 0, nullptr, 0, nullptr, 0 },
+    { 0x0F, "Rain1", true, false, Rain1_parameters, 4, Rain1_flags, 3, nullptr, 0, D5NEXT_HOST_UNKNOWN, false },
+    { 0x10, "Rain2", true, false, Rain2_parameters, 4, Rain2_flags, 3, nullptr, 0, D5NEXT_HOST_UNKNOWN, false },
+    { 0x11, "Rain3", true, false, Rain3_parameters, 4, Rain3_flags, 3, nullptr, 0, D5NEXT_HOST_UNKNOWN, false },
+    { 0x12, "Switch", true, false, nullptr, 0, nullptr, 0, nullptr, 0, D5NEXT_HOST_UNKNOWN, false },
     { 0x13, "RainbowShift", true, false, RainbowShift_parameters, 5, nullptr, 0, nullptr, 0 },
-    { 0x14, "Sound1", false, true, nullptr, 0, nullptr, 0, nullptr, 0 },
-    { 0x15, "Sound2", false, true, nullptr, 0, nullptr, 0, nullptr, 0 },
-    { 0x16, "Sound3", false, true, nullptr, 0, nullptr, 0, nullptr, 0 },
-    { 0x17, "Sound4", false, true, nullptr, 0, nullptr, 0, nullptr, 0 },
-    { 0x18, "AmbientPx", false, true, nullptr, 0, nullptr, 0, nullptr, 0 },
+    { 0x14, "Sound1", true, true, nullptr, 0, nullptr, 0, nullptr, 0, D5NEXT_HOST_PROBABLE, false },
+    { 0x15, "Sound2", true, true, Sound2_parameters, 6, Sound2_flags, 5, Sound2_colors, 2, D5NEXT_HOST_PROBABLE, false, Sound2_filters, 2 },
+    { 0x16, "Sound3", true, true, Sound3_parameters, 9, nullptr, 0, nullptr, 0, D5NEXT_HOST_PROBABLE, false },
+    { 0x17, "Sound4", true, true, Sound4_parameters, 4, Sound4_flags, 3, nullptr, 0, D5NEXT_HOST_PROBABLE, false },
+    { 0x18, "AmbientPx", true, true, nullptr, 0, nullptr, 0, nullptr, 0, D5NEXT_HOST_OBSERVED, false },
 };
 
 unsigned int D5NextEffects::Count()
